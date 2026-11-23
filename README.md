@@ -26,6 +26,20 @@ información, y nada se borra.
 - Toda devolución, recaptura, No aplica o reapertura exige motivo y queda en la bitácora. Si otra persona ya cambió el
   expediente, la acción se rechaza y la pantalla se actualiza.
 
+## Etapa 3: expediente del evento (guía interna de estímulo fiscal)
+
+- **Grupos:** al dar de alta el grupo se registra el tipo de evento (congreso, convención, exposición o feria) y el
+  organizador (país de residencia e identificación fiscal extranjera). En el grupo, *Documentos del evento*: contrato,
+  agenda, evidencia de salones, lista oficial de asistentes, identificación fiscal del organizador, gafetes o
+  constancias y rooming list. PDF o foto; el rooming list también en Excel. Un archivo nuevo no reemplaza al anterior.
+- **Huésped:** vencimiento del pasaporte (Front Desk en el alta o Grupos en la revisión; Grupos no puede aprobar sin
+  él) y aviso si vence antes de la salida del grupo. El iPad ofrece al final un paso opcional para el gafete o
+  constancia, que no deja el expediente incompleto si falta.
+- **Crédito:** verificación de que el pago es con tarjeta extranjera o transferencia internacional.
+- **Impuestos:** lista de 10 puntos del grupo (cada marca se guarda con nombre y hora), semáforo de riesgo con motivo,
+  y folios separados para la factura del evento y la de días personales.
+- Cada grupo muestra su propia bitácora. Las listas de verificación de cada área se ampliaron con los puntos de la guía.
+
 Pendiente: administración de usuarios, reportes y bitácora general.
 
 ## Cómo está hecho
