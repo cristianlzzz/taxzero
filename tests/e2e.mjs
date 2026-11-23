@@ -56,7 +56,23 @@ async function sesion(rol, opts = {}, cred = C[rol]) {
   await page.fill('#l-email', cred[0]);
   await page.fill('#l-clave', cred[1]);
   await page.click('button[type=submit]');
+  // Al primer ingreso (o si cambió el aviso) se pide aceptar el aviso de privacidad.
+  await page.waitForSelector('[data-form="aviso"], header.top, .station, #l-err:not([hidden])', { timeout: 15000 });
+  if (await page.isVisible('[data-form="aviso"]')) {
+    ok(await page.isDisabled('#av-btn'), `Aviso de privacidad: no deja entrar sin marcar la casilla (${rol})`);
+    const r = await page.evaluate(async () => (await fetch('/api/grupos')).status);
+    ok(r === 428, `Sin aceptar el aviso el servidor no entrega datos (${r})`);
+    if (rol === 'nuevo') await page.screenshot({ path: `${OUT}/00-aviso-personal.png` });
+    await page.check('#av-ok');
+    await page.click('#av-btn');
+    await page.waitForSelector('header.top, .station');
+  }
   return { ctx, page };
+}
+
+async function aceptarAvisoHuesped(page) {
+  await page.waitForSelector('#aviso-huesped');
+  await page.click('button:has-text("Acepto / I accept")');
 }
 
 const F = await fotos();
@@ -166,7 +182,19 @@ let codigo, codigo2;
   await page.screenshot({ path: `${OUT}/06-ipad-escanear.png` });
   await page.fill('#cod', codigo.toLowerCase().replace(/-/g, ' '));
   await page.click('button:has-text("Continuar")');
-  await page.waitForSelector('h1:has-text("Emily Carter")');
+  await page.waitForSelector('#aviso-huesped');
+  ok(await page.isHidden('#foto'), 'El iPad muestra el aviso de privacidad al huésped antes de las fotos');
+  await page.screenshot({ path: `${OUT}/06b-ipad-aviso.png` });
+  // Sin aceptar, el servidor no guarda fotos.
+  const sinAviso = await page.evaluate(async ({ cod }) => {
+    const r = await fetch(`/api/captura/${cod}/foto?exp=00000000-0000-0000-0000-000000000000&tipo=pasaporte`, {
+      method: 'POST', headers: { 'x-taxzero': '1', 'content-type': 'image/jpeg' }, body: new Uint8Array([0xff, 0xd8, 0xff, ...new Array(2000).fill(1)]),
+    });
+    return r.status;
+  }, { cod: codigo });
+  ok(sinAviso >= 400, `Sin aceptar el aviso no se guarda ninguna foto (${sinAviso})`);
+  await aceptarAvisoHuesped(page);
+  await page.waitForSelector('text=Paso 1 de 5');
   ok(await page.isVisible('text=Paso 1 de 5'), 'La captura pide 4 documentos y el gafete opcional');
 
   // Pasaporte: primero una foto borrosa
@@ -216,6 +244,7 @@ let codigo, codigo2;
   await page.fill('#cod', codigo2);
   await page.click('button:has-text("Continuar")');
   await page.waitForSelector('h1:has-text("Lukas Becker")');
+  await aceptarAvisoHuesped(page);
   await page.setInputFiles('#foto', F.pasaporte);
   await page.click('button:has-text("Usar esta foto")');
   await page.waitForSelector('text=Paso 2 de 5');
@@ -304,6 +333,7 @@ const marcarTodo = async (page) => {
   const ip = await sesion('ipad', devices['iPad (gen 7) landscape']);
   await ip.page.fill('#cod', codigo3);
   await ip.page.click('button:has-text("Continuar")');
+  await aceptarAvisoHuesped(ip.page);
   await ip.page.waitForSelector('text=Paso 1 de 1: Pasaporte');
   ok(true, 'La recaptura solo pide el documento señalado');
   await ip.page.setInputFiles('#foto', F.pasaporte);
@@ -632,6 +662,20 @@ if (C.admin[1]) {
   await g.ctx.close();
 } else {
   console.log('· Sin CLAVE_ADMIN: se omiten las pruebas de usuarios');
+}
+
+// ---------------------------------------------------------------- 8. Aviso de privacidad público
+{
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await page.goto(`${BASE}/#/aviso-de-privacidad`);
+  await page.waitForSelector('h2:has-text("Aviso de privacidad integral")');
+  ok(await page.isVisible('h2:has-text("Privacy notice")'), 'El aviso completo se abre sin sesión, en español e inglés');
+  await page.screenshot({ path: `${OUT}/22-aviso-publico.png`, fullPage: true });
+  await page.click('text=Ir al inicio de sesión');
+  await page.waitForSelector('#l-email');
+  ok(true, 'Desde el aviso se regresa al inicio de sesión');
+  await ctx.close();
 }
 
 await browser.close();

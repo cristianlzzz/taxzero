@@ -6,7 +6,7 @@ import {
 import { libro } from './xlsx';
 
 type Rol = 'admin' | 'grupos' | 'frontdesk' | 'ipad' | 'credito' | 'impuestos';
-interface Perfil { id: string; nombre: string; rol: Rol }
+interface Perfil { id: string; nombre: string; rol: Rol; aviso_version?: string | null }
 type Vars = { db: Db; perfil: Perfil; tokens: Tokens };
 
 const COOKIE = 'tz_sesion';
@@ -26,6 +26,8 @@ const ARCHIVOS: Record<string, { ext: string; firma: number[] }> = {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const CODIGO = /^TZ-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
 const MAX_FOTO = 8 * 1024 * 1024;
+// Versión vigente del aviso de privacidad. Debe coincidir con src/client/aviso.js.
+const AVISO_VERSION = '2026-11-borrador';
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 
@@ -105,7 +107,7 @@ app.post('/api/sesion', async (c) => {
   const clave = texto(b.clave, 200);
   const t = await iniciarSesion(c.env, email, clave);
   const db = new Db(c.env, t.access_token);
-  const [perfil] = await db.rpc<Perfil[]>('mi_perfil');
+  const [perfil] = await db.rpc<Perfil[]>('mi_sesion');
   if (!perfil) {
     await cerrarSesion(c.env, t.access_token);
     throw new ErrorApi(403, 'Tu usuario no tiene un área asignada en Taxzero. Pide acceso a TI.');
@@ -137,7 +139,7 @@ app.use('/api/*', async (c, next) => {
   const db = new Db(c.env, t.access_token);
   let perfil: Perfil | undefined;
   try {
-    [perfil] = await db.rpc<Perfil[]>('mi_perfil');
+    [perfil] = await db.rpc<Perfil[]>('mi_sesion');
   } catch (e) {
     if (e instanceof ErrorApi && e.status === 401) {
       deleteCookie(c, COOKIE, { path: '/' });
@@ -152,10 +154,22 @@ app.use('/api/*', async (c, next) => {
   c.set('db', db);
   c.set('perfil', perfil);
   c.set('tokens', t);
+  // Sin aceptar el aviso de privacidad vigente solo se puede consultar la sesión y aceptarlo.
+  const libre = (c.req.method === 'GET' && c.req.path === '/api/sesion') || c.req.path === '/api/aviso';
+  if (perfil.aviso_version !== AVISO_VERSION && !libre) {
+    return c.json({ error: 'Acepta el aviso de privacidad para continuar.', code: 'AVISO_PENDIENTE' }, 428);
+  }
   await next();
 });
 
 app.get('/api/sesion', (c) => c.json({ perfil: c.get('perfil') }));
+
+app.post('/api/aviso', async (c) => {
+  const b = await c.req.json().catch(() => ({}));
+  if (b.version !== AVISO_VERSION) throw new ErrorApi(409, 'El aviso cambió. Recarga la página para leer la versión vigente.');
+  await c.get('db').rpc('aceptar_aviso', { p_version: AVISO_VERSION });
+  return c.json({ perfil: { ...c.get('perfil'), aviso_version: AVISO_VERSION } });
+});
 
 // ------------------------------------------------------------------ grupos
 app.get('/api/grupos', async (c) => {
@@ -438,6 +452,16 @@ app.post('/api/captura/iniciar', async (c) => {
   if (!CODIGO.test(codigo)) throw new ErrorApi(409, 'CODIGO_NO_EXISTE', 'P0001');
   const [captura] = await c.get('db').rpc<any[]>('iniciar_captura', { p_codigo: codigo });
   return c.json({ captura: { ...captura, codigo } });
+});
+
+app.post('/api/captura/:codigo/aviso', async (c) => {
+  exigir(c, 'ipad');
+  const codigo = c.req.param('codigo');
+  if (!CODIGO.test(codigo)) throw new ErrorApi(404, 'No encontrado.');
+  const b = await c.req.json().catch(() => ({}));
+  if (b.version !== AVISO_VERSION) throw new ErrorApi(409, 'El aviso cambió. Recarga la página para leer la versión vigente.');
+  await c.get('db').rpc('aviso_huesped', { p_codigo: codigo, p_acepta: b.acepta === true, p_version: AVISO_VERSION });
+  return c.json({ ok: true });
 });
 
 app.post('/api/captura/:codigo/foto', async (c) => {

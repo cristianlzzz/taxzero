@@ -64,6 +64,7 @@ export async function api(method, url, body, opts = {}) {
   if (!res.ok) {
     const err = new ErrorApi(res.status, data?.error || `Error ${res.status}`, data?.code);
     if (res.status === 401 && opts.onUnauthorized !== false) window.dispatchEvent(new CustomEvent('tz:sesion-terminada'));
+    if (res.status === 428 && data?.code === 'AVISO_PENDIENTE') window.dispatchEvent(new CustomEvent('tz:aviso-pendiente'));
     throw err;
   }
   return data;
