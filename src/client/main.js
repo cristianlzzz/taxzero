@@ -93,8 +93,10 @@ export function header() {
   const ini = p.nombre.split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase();
   return `<header class="top"><div class="wrap top-in">
     <a class="brand" href="#/">${ICONO}Taxzero<small>Expedientes tax free</small></a>
-    <div class="roles"><span class="tab" aria-selected="true">${esc(r.label)}</span></div>
-    <div class="who"><span class="avatar">${esc(ini)}</span><span>${esc(p.nombre)}<br><small>${esc(r.label)} · ${r.where} · <button class="linkbtn" data-a="salir">Cerrar sesión</button></small></span></div>
+    <nav class="roles" aria-label="Secciones">${p.rol === 'admin'
+      ? `<a class="tab" href="#/" aria-selected="${!location.hash.startsWith('#/usuarios')}">Grupos</a><a class="tab" href="#/usuarios" aria-selected="${location.hash.startsWith('#/usuarios')}">Usuarios</a>`
+      : `<span class="tab" aria-selected="true">${esc(r.label)}</span>`}</nav>
+    <div class="who"><span class="avatar">${esc(ini)}</span><span>${esc(p.nombre)}<br><small>${esc(r.label)} · ${r.where} · <button class="linkbtn" data-a="miclave">Cambiar contraseña</button> · <button class="linkbtn" data-a="salir">Cerrar sesión</button></small></span></div>
   </div></header>`;
 }
 

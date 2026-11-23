@@ -306,3 +306,10 @@ a.btn{text-decoration:none}
   .docrow{grid-template-columns:minmax(0,1fr)}
   .docrow-a{justify-self:start}
 }
+
+/* Usuarios (etapa 4) */
+.row.nowrap{flex-wrap:nowrap}
+.mono-in{font-family:var(--f-mono)}
+input[type=password]{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line-2);border-radius:6px;padding:7px 12px;width:100%}
+tr.inactivo td{color:var(--muted)}
+a.tab{text-decoration:none}
