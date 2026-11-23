@@ -15,8 +15,18 @@ información, y nada se borra.
   algo, queda como *Captura incompleta*. Si el código vence a media captura, lo tomado se guarda.
 - **Expediente (PC):** fotos reales con versiones (las anteriores se conservan), ampliación a tamaño real y bitácora.
 
-Siguiente etapa: revisiones de Grupos, Crédito e Impuestos (aprobar, devolver con motivo, monto por grupo, folio de
-factura), administración de usuarios, reportes.
+## Etapa 2: revisiones
+
+- **Grupos:** lista de verificación (nombre, firma, nacionalidad, fechas) que habilita *Aprobar y enviar a Crédito*;
+  *Pedir recaptura* de documentos específicos (Front Desk genera otro QR y el iPad solo pide esos); *No aplica*.
+- **Crédito:** verificación del comprobante, *Validar y enviar a Impuestos* o *Devolver a Grupos*; monto final de
+  devolución por grupo (un monto nuevo deja visible el anterior). La página no calcula el monto.
+- **Impuestos:** documentos en el orden del archivo físico, *Cerrar expediente* o *Devolver a Crédito*, folio de
+  factura por grupo y *Reabrir por auditoría*.
+- Toda devolución, recaptura, No aplica o reapertura exige motivo y queda en la bitácora. Si otra persona ya cambió el
+  expediente, la acción se rechaza y la pantalla se actualiza.
+
+Pendiente: administración de usuarios, reportes y bitácora general.
 
 ## Cómo está hecho
 
@@ -48,7 +58,7 @@ proyecto, crea `.dev.vars` con `SUPABASE_URL=...` y `SUPABASE_ANON_KEY=...`.
 Prueba de punta a punta (con el servidor local corriendo):
 
 ```bash
-CLAVE_GRUPOS=... CLAVE_FRONTDESK=... CLAVE_IPAD=... CLAVE_CREDITO=... node tests/e2e.mjs
+CLAVE_GRUPOS=... CLAVE_FRONTDESK=... CLAVE_IPAD=... CLAVE_CREDITO=... CLAVE_IMPUESTOS=... node tests/e2e.mjs
 ```
 
 ## Base de datos

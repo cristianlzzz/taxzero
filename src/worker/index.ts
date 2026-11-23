@@ -197,7 +197,31 @@ app.get('/api/grupos/:id', async (c) => {
       }
     }
   }
-  return c.json({ grupo, expedientes, codigos });
+  let montos: any[] = [];
+  let facturas: any[] = [];
+  if (c.get('perfil').rol !== 'frontdesk') {
+    [montos, facturas] = await Promise.all([
+      db.select(`montos_grupo?grupo_id=eq.${id}&select=id,valor,nota,registrado_por_nombre,ts&order=ts.asc,id.asc`),
+      db.select(`facturas_grupo?grupo_id=eq.${id}&select=id,folio,registrado_por_nombre,ts&order=ts.asc,id.asc`),
+    ]);
+  }
+  return c.json({ grupo, expedientes, codigos, montos, facturas });
+});
+
+app.post('/api/grupos/:id/monto', async (c) => {
+  exigir(c, 'credito');
+  const id = uuid(c.req.param('id'));
+  const b = await c.req.json().catch(() => ({}));
+  await c.get('db').rpc('registrar_monto', { p_grupo: id, p_valor: texto(b.valor, 40), p_nota: texto(b.nota, 500) });
+  return c.json({ ok: true }, 201);
+});
+
+app.post('/api/grupos/:id/factura', async (c) => {
+  exigir(c, 'impuestos');
+  const id = uuid(c.req.param('id'));
+  const b = await c.req.json().catch(() => ({}));
+  await c.get('db').rpc('registrar_factura', { p_grupo: id, p_folio: texto(b.folio, 60) });
+  return c.json({ ok: true }, 201);
 });
 
 app.post('/api/grupos/:id/huespedes', async (c) => {
@@ -243,6 +267,28 @@ app.get('/api/expedientes/:id', async (c) => {
     );
   }
   return c.json({ expediente, grupo, bitacora, codigo, documentos });
+});
+
+const ACCIONES: Record<string, Rol> = {
+  aprobar: 'grupos', recaptura: 'grupos', no_aplica: 'grupos',
+  validar: 'credito', devolver_grupos: 'credito',
+  cerrar: 'impuestos', devolver_credito: 'impuestos', reabrir: 'impuestos',
+};
+const ESTADOS = ['pendiente', 'incompleta', 'rev_grupos', 'val_credito', 'rev_impuestos', 'cerrado', 'dev_grupos', 'dev_credito', 'no_aplica'];
+
+app.post('/api/expedientes/:id/accion', async (c) => {
+  const id = uuid(c.req.param('id'));
+  const b = await c.req.json().catch(() => ({}));
+  const accion = String(b.accion || '');
+  if (!ACCIONES[accion]) throw new ErrorApi(400, 'Acción no válida.');
+  exigir(c, ACCIONES[accion]);
+  if (!ESTADOS.includes(b.estado)) throw new ErrorApi(400, 'Falta el estado del expediente.');
+  const docs = Array.isArray(b.docs) ? b.docs.filter((d: string) => (TIPOS as readonly string[]).includes(d)) : null;
+  const estado = await c.get('db').rpc<string>('revisar_expediente', {
+    p_expediente: id, p_accion: accion, p_estado: b.estado,
+    p_motivo: texto(b.motivo, 500, false) || null, p_docs: docs && docs.length ? docs : null,
+  });
+  return c.json({ estado });
 });
 
 app.post('/api/expedientes/:id/codigo', async (c) => {
