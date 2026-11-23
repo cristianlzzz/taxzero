@@ -5,6 +5,7 @@ export interface Env {
   SUPABASE_URL: string;
   SUPABASE_ANON_KEY: string;
   ASSETS: Fetcher;
+  DOCS: R2Bucket;
 }
 
 export class ErrorApi extends Error {
@@ -86,24 +87,6 @@ export class Db {
     const res = await fetch(`${this.env.SUPABASE_URL}/rest/v1/${pathAndQuery}`, { headers: this.headers() });
     if (!res.ok) throw await leerError(res);
     return res.json();
-  }
-
-  async subir(
-    bucket: string, ruta: string, cuerpo: ArrayBuffer, tipo: string,
-    rechazo = 'La captura ya no está activa. Pide a Front Desk un código nuevo.',
-  ): Promise<void> {
-    const res = await fetch(`${this.env.SUPABASE_URL}/storage/v1/object/${bucket}/${ruta}`, {
-      method: 'POST',
-      headers: this.headers({ 'content-type': tipo, 'x-upsert': 'false', 'cache-control': 'max-age=31536000' }),
-      body: cuerpo,
-    });
-    if (!res.ok) {
-      const e = await leerError(res);
-      if (res.status === 403 || res.status === 400) {
-        throw new ErrorApi(403, rechazo);
-      }
-      throw e;
-    }
   }
 
   async descargar(bucket: string, ruta: string): Promise<Response> {

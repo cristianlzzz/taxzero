@@ -10,6 +10,8 @@
     "run_worker_first": true
   },
   "triggers": { "crons": ["*/5 * * * *"] },
+  // Documentos (fotos y archivos del evento). Bucket privado con candado contra borrado.
+  "r2_buckets": [{ "binding": "DOCS", "bucket_name": "taxzero-documentos" }],
   // Datos públicos del proyecto de Supabase (la llave publicable no es secreta).
   "vars": {
     "SUPABASE_URL": "https://drarvuaebvznajijvtyl.supabase.co",
@@ -17,6 +19,7 @@
   },
   // Versiones de prueba que Cloudflare publica para cada PR (usan el mismo proyecto de pruebas).
   "previews": {
+    "r2_buckets": [{ "binding": "DOCS", "bucket_name": "taxzero-documentos" }],
     "vars": {
       "SUPABASE_URL": "https://drarvuaebvznajijvtyl.supabase.co",
       "SUPABASE_ANON_KEY": "sb_publishable_55ecwVhKhmqQ8aXyyS2WlQ_hjtf1d1S"
