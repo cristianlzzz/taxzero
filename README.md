@@ -40,7 +40,19 @@ información, y nada se borra.
   y folios separados para la factura del evento y la de días personales.
 - Cada grupo muestra su propia bitácora. Las listas de verificación de cada área se ampliaron con los puntos de la guía.
 
-Pendiente: administración de usuarios, reportes y bitácora general.
+## Etapa 4: administración de usuarios
+
+- Administración tiene la pantalla **Usuarios**: da de alta usuarios (nombre, correo, área y contraseña inicial,
+  con botón para generar una), cambia su área, restablece su contraseña y los desactiva o reactiva.
+- Los usuarios no se borran: al desactivar se pide el motivo, se cierran sus sesiones y ya no pueden entrar.
+  Su nombre sigue en las bitácoras.
+- Administración no puede cambiar su propia área ni desactivarse a sí misma.
+- Cualquier usuario cambia su propia contraseña desde "Cambiar contraseña" (pide la actual).
+  Las estaciones de iPad no tienen esa opción; su contraseña la restablece Administración.
+- Contraseñas: al menos 10 caracteres, con letras y números. Se guardan cifradas por Supabase Auth.
+- La bitácora de usuarios solo la ve Administración.
+
+Pendiente: reportes y bitácora general.
 
 ## Cómo está hecho
 
@@ -72,7 +84,7 @@ proyecto, crea `.dev.vars` con `SUPABASE_URL=...` y `SUPABASE_ANON_KEY=...`.
 Prueba de punta a punta (con el servidor local corriendo):
 
 ```bash
-CLAVE_GRUPOS=... CLAVE_FRONTDESK=... CLAVE_IPAD=... CLAVE_CREDITO=... CLAVE_IMPUESTOS=... node tests/e2e.mjs
+CLAVE_GRUPOS=... CLAVE_FRONTDESK=... CLAVE_IPAD=... CLAVE_CREDITO=... CLAVE_IMPUESTOS=... CLAVE_ADMIN=... node tests/e2e.mjs
 ```
 
 ## Base de datos
@@ -93,7 +105,7 @@ O conecta este repositorio en Cloudflare (Workers → Create → Import a reposi
 ## Antes de usar datos reales
 
 - Aviso de privacidad del hotel (LFPDPPP) publicado y aceptado.
-- Desactivar el registro abierto en Supabase Auth (Authentication → Sign In / Providers → Allow new users to sign up: off)
+- Desactivar el registro abierto en Supabase Auth (los usuarios ya se dan de alta desde la app) (Authentication → Sign In / Providers → Allow new users to sign up: off)
   y activar la protección de contraseñas filtradas.
 - Cambiar las contraseñas de prueba o borrar esos usuarios del proyecto de pruebas.
 - Considerar R2 para las fotos: un grupo de 500 huéspedes son ~2,000 fotos (~0.6 GB); el plan gratuito de Supabase

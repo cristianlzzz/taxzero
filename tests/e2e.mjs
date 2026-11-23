@@ -14,6 +14,7 @@ const C = {
   ipad: ['ipad1.taxzero@example.com', process.env.CLAVE_IPAD],
   credito: ['credito.taxzero@example.com', process.env.CLAVE_CREDITO],
   impuestos: ['impuestos.taxzero@example.com', process.env.CLAVE_IMPUESTOS],
+  admin: ['admin.taxzero@example.com', process.env.CLAVE_ADMIN],
 };
 mkdirSync(OUT, { recursive: true });
 
@@ -46,13 +47,13 @@ async function fotos() {
   return res;
 }
 
-async function sesion(rol, opts = {}) {
+async function sesion(rol, opts = {}, cred = C[rol]) {
   const ctx = await browser.newContext({ viewport: { width: 1360, height: 900 }, deviceScaleFactor: 1, ...opts });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => ok(false, `error de página (${rol}): ${e.message}`));
   await page.goto(BASE);
-  await page.fill('#l-email', C[rol][0]);
-  await page.fill('#l-clave', C[rol][1]);
+  await page.fill('#l-email', cred[0]);
+  await page.fill('#l-clave', cred[1]);
   await page.click('button[type=submit]');
   return { ctx, page };
 }
@@ -430,6 +431,123 @@ const marcarTodo = async (page) => {
   const r = await page.evaluate(async () => (await fetch('/api/grupos', { method: 'POST', headers: { 'x-taxzero': '1', 'content-type': 'application/json' }, body: '{"nombre":"x","empresa":"y","llegada":"2026-01-01","salida":"2026-01-02"}' })).status);
   ok(r === 403, `Crédito no puede crear grupos (${r})`);
   await ctx.close();
+}
+
+// ---------------------------------------------------------------- 6. Administración de usuarios
+if (C.admin[1]) {
+  const correo = `prueba${sufijo}@example.com`;
+  const nombre = `Usuario Prueba ${sufijo}`;
+  const clave1 = `Inicial${sufijo}abc`;
+  const clave2 = `Restab${sufijo}xyz9`;
+  const clave3 = `MiPropia${sufijo}k2`;
+  const fila = (page) => page.locator('tr', { hasText: correo });
+  const { ctx, page } = await sesion('admin');
+  await page.waitForSelector('a.tab:has-text("Usuarios")');
+  await page.click('a.tab:has-text("Usuarios")');
+  await page.waitForSelector('text=Bitácora de usuarios');
+  ok(await page.isVisible('tr:has-text("(tú)")'), 'Administración ve la lista de usuarios');
+
+  await page.click('button[data-a=usr-nuevo]');
+  await page.fill('#un-nombre', nombre);
+  await page.fill('#un-email', correo);
+  await page.selectOption('#un-rol', 'frontdesk');
+  await page.fill('#un-clave', 'corta1');
+  await page.click('.modal button[type=submit]');
+  await page.waitForSelector('.modal .err:has-text("10 caracteres")');
+  ok(true, 'Rechaza una contraseña corta');
+  await page.click('button[data-a=gen-clave]');
+  const gen = await page.inputValue('#un-clave');
+  ok(/^(?=.*[A-Za-z])(?=.*\d).{12}$/.test(gen), 'El botón Generar propone una contraseña válida');
+  await page.fill('#un-clave', clave1);
+  await page.click('.modal button[type=submit]');
+  await fila(page).waitFor();
+  ok(await fila(page).locator('text=Nunca ha entrado').isVisible(), 'Usuario dado de alta, aún sin acceso');
+  await page.click('button[data-a=usr-nuevo]');
+  await page.fill('#un-nombre', 'Duplicado');
+  await page.fill('#un-email', correo.toUpperCase());
+  await page.selectOption('#un-rol', 'grupos');
+  await page.fill('#un-clave', clave1);
+  await page.click('.modal button[type=submit]');
+  await page.waitForSelector('.modal .err:has-text("Ya existe")');
+  ok(true, 'No permite dos usuarios con el mismo correo');
+  await page.click('.modal button[data-a=cerrar-modal]');
+
+  // El nuevo usuario entra a Front Desk.
+  let u = await sesion('nuevo', {}, [correo, clave1]);
+  await u.page.waitForSelector('.who:has-text("Front Desk")');
+  const r403 = await u.page.evaluate(async () => (await fetch('/api/usuarios')).status);
+  ok(r403 === 403, `Un usuario de otra área no puede ver los usuarios (${r403})`);
+  await u.ctx.close();
+
+  // Cambiar área.
+  await page.reload();
+  await fila(page).waitFor();
+  await fila(page).locator('button[data-a=usr-area]').click();
+  await page.selectOption('#ua-rol', 'credito');
+  await page.click('.modal button[type=submit]');
+  await page.waitForSelector(`tr:has-text("${correo}") >> text=Crédito`);
+  ok(await page.isVisible('text=Cambió el área de ' + nombre), 'El cambio de área queda en la bitácora de usuarios');
+
+  // Restablecer contraseña: la anterior deja de servir.
+  await fila(page).locator('button[data-a=usr-clave]').click();
+  await page.fill('#uc-clave', clave2);
+  await page.click('.modal button[type=submit]');
+  await page.waitForSelector('text=Restableció la contraseña de ' + nombre);
+  u = await sesion('nuevo', {}, [correo, clave1]);
+  await u.page.waitForSelector('.err:not([hidden])');
+  ok(true, 'La contraseña anterior ya no entra');
+  await u.ctx.close();
+  u = await sesion('nuevo', {}, [correo, clave2]);
+  await u.page.waitForSelector('text=Expedientes por');
+  ok(true, 'Entra con la contraseña restablecida, ya en Crédito');
+
+  // Cambiar su propia contraseña.
+  await u.page.click('button[data-a=miclave]');
+  await u.page.fill('#mc-actual', 'equivocada123');
+  await u.page.fill('#mc-nueva', clave3);
+  await u.page.fill('#mc-otra', clave3);
+  await u.page.click('.modal button[type=submit]');
+  await u.page.waitForSelector('.modal .err:has-text("actual no es correcta")');
+  await u.page.fill('#mc-actual', clave2);
+  await u.page.click('.modal button[type=submit]');
+  await u.page.waitForSelector('text=Contraseña cambiada');
+  ok(true, 'El usuario cambió su propia contraseña');
+  await u.ctx.close();
+
+  // Desactivar: pide motivo, cierra sesión y ya no entra.
+  await page.reload();
+  await fila(page).waitFor();
+  await fila(page).locator('button[data-a=usr-estado]').click();
+  await page.click('.modal button[type=submit]');
+  await page.waitForSelector('.modal .err:has-text("motivo")');
+  await page.selectOption('#ue-motivo', 'Cambió de departamento');
+  await page.click('.modal button[type=submit]');
+  await page.waitForSelector(`tr.inactivo:has-text("${correo}")`);
+  ok(await page.isVisible('text=Desactivó al usuario ' + nombre), 'Desactivado con motivo en la bitácora');
+  u = await sesion('nuevo', {}, [correo, clave3]);
+  await u.page.waitForSelector('.err:not([hidden])');
+  ok(true, 'Un usuario desactivado no puede entrar');
+  await u.ctx.close();
+
+  await fila(page).locator('button[data-a=usr-estado]').click();
+  await page.click('.modal button[type=submit]');
+  await page.waitForSelector(`tr:not(.inactivo):has-text("${correo}")`);
+  u = await sesion('nuevo', {}, [correo, clave3]);
+  await u.page.waitForSelector('text=Expedientes por');
+  ok(true, 'Reactivado, vuelve a entrar con su contraseña');
+  await u.ctx.close();
+  ok(!(await page.isVisible('tr:has-text("(tú)") button[data-a=usr-estado]')), 'Administración no puede desactivarse a sí misma');
+  await page.screenshot({ path: `${OUT}/18-usuarios.png`, fullPage: true });
+  await ctx.close();
+
+  // La bitácora de usuarios no la ven las demás áreas.
+  const g = await sesion('grupos');
+  await g.page.waitForSelector("text=Expedientes por");
+  const r = await g.page.evaluate(async () => (await fetch('/api/usuarios', { method: 'POST', headers: { 'x-taxzero': '1', 'content-type': 'application/json' }, body: '{"email":"x@example.com","clave":"abcdefghij1","nombre":"Intruso","rol":"admin"}' })).status);
+  ok(r === 403, `Grupos no puede dar de alta usuarios (${r})`);
+  await g.ctx.close();
+} else {
+  console.log('· Sin CLAVE_ADMIN: se omiten las pruebas de usuarios');
 }
 
 await browser.close();

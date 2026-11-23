@@ -474,6 +474,66 @@ app.post('/api/captura/:codigo/finalizar', async (c) => {
   return c.json(r);
 });
 
+// ------------------------------------------------------------------ usuarios (Administración)
+const ROLES: Rol[] = ['admin', 'grupos', 'frontdesk', 'ipad', 'credito', 'impuestos'];
+function rolValido(v: unknown): Rol {
+  if (!ROLES.includes(v as Rol)) throw new ErrorApi(400, 'Elige el área.');
+  return v as Rol;
+}
+function clave(v: unknown): string {
+  // Las contraseñas no se recortan: se usan tal como se escribieron.
+  const s = typeof v === 'string' ? v : '';
+  if (!s) throw new ErrorApi(400, 'Escribe la contraseña.');
+  if (s.length > 72) throw new ErrorApi(400, 'La contraseña es demasiado larga (máximo 72 caracteres).');
+  return s;
+}
+
+app.get('/api/usuarios', async (c) => {
+  exigir(c, 'admin');
+  const db = c.get('db');
+  const [usuarios, bitacora] = await Promise.all([db.rpc<any[]>('listar_usuarios'), db.rpc<any[]>('bitacora_usuarios')]);
+  return c.json({ usuarios, bitacora });
+});
+
+app.post('/api/usuarios', async (c) => {
+  exigir(c, 'admin');
+  const b = await c.req.json().catch(() => ({}));
+  const id = await c.get('db').rpc<string>('crear_usuario', {
+    p_email: texto(b.email, 200).toLowerCase(), p_clave: clave(b.clave), p_nombre: texto(b.nombre, 120), p_rol: rolValido(b.rol),
+  });
+  return c.json({ id }, 201);
+});
+
+app.post('/api/usuarios/:id/area', async (c) => {
+  exigir(c, 'admin');
+  const id = uuid(c.req.param('id'));
+  const b = await c.req.json().catch(() => ({}));
+  await c.get('db').rpc('cambiar_area_usuario', { p_usuario: id, p_rol: rolValido(b.rol) });
+  return c.json({ ok: true });
+});
+
+app.post('/api/usuarios/:id/estado', async (c) => {
+  exigir(c, 'admin');
+  const id = uuid(c.req.param('id'));
+  const b = await c.req.json().catch(() => ({}));
+  await c.get('db').rpc('activar_usuario', { p_usuario: id, p_activo: !!b.activo, p_motivo: texto(b.motivo, 500, false) || null });
+  return c.json({ ok: true });
+});
+
+app.post('/api/usuarios/:id/clave', async (c) => {
+  exigir(c, 'admin');
+  const id = uuid(c.req.param('id'));
+  const b = await c.req.json().catch(() => ({}));
+  await c.get('db').rpc('restablecer_clave', { p_usuario: id, p_clave: clave(b.clave) });
+  return c.json({ ok: true });
+});
+
+app.post('/api/mi-clave', async (c) => {
+  const b = await c.req.json().catch(() => ({}));
+  await c.get('db').rpc('cambiar_mi_clave', { p_actual: clave(b.actual), p_nueva: clave(b.nueva) });
+  return c.json({ ok: true });
+});
+
 app.all('/api/*', (c) => c.json({ error: 'No encontrado.' }, 404));
 
 // ------------------------------------------------------------------ página

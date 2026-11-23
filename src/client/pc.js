@@ -1,7 +1,7 @@
 // Pantallas de escritorio (PC): Grupos, Front Desk, Crédito, Impuestos y Administración.
 import qrcode from 'qrcode-generator';
 import {
-  CHECKS, CHECK_GRUPO, DOCS, DOCS_GRUPO, DOC_ORDER, ESTADOS, FILE_ORDER, FMM_TIPOS, MOTIVOS, PAISES, PAISES_FREC, QUEUE, QUEUE_WORD,
+  CHECKS, CHECK_GRUPO, ROLES, DOCS, DOCS_GRUPO, DOC_ORDER, ESTADOS, FILE_ORDER, FMM_TIPOS, MOTIVOS, PAISES, PAISES_FREC, QUEUE, QUEUE_WORD,
   RIESGOS, TIPOS_EVENTO,
 } from './catalogos.js';
 import { api, dateTxt, esc, fmt, folioExp, folioGrupo, mmss } from './util.js';
@@ -20,6 +20,7 @@ function rutaActual() {
   const h = location.hash.replace(/^#/, '') || '/';
   let m;
   if (h === '/grupos/nuevo') return { s: 'alta' };
+  if (h === '/usuarios') return { s: 'usuarios' };
   if ((m = h.match(/^\/grupos\/([0-9a-f-]{36})$/))) return { s: 'grupo', id: m[1] };
   if ((m = h.match(/^\/expedientes\/([0-9a-f-]{36})$/))) return { s: 'exp', id: m[1] };
   return { s: 'grupos' };
@@ -58,6 +59,7 @@ function cargar(ruta) {
   if (ruta.s === 'grupos') return api('GET', '/api/grupos');
   if (ruta.s === 'grupo') return api('GET', `/api/grupos/${ruta.id}`);
   if (ruta.s === 'exp') return api('GET', `/api/expedientes/${ruta.id}`);
+  if (ruta.s === 'usuarios') return api('GET', '/api/usuarios');
   return Promise.resolve({});
 }
 
@@ -68,6 +70,7 @@ function pintar() {
   else if (vista.ruta.s === 'alta') body = altaGrupo();
   else if (vista.ruta.s === 'grupo') body = pantallaGrupo(vista.datos);
   else if (vista.ruta.s === 'exp') body = pantallaExpediente(vista.datos);
+  else if (vista.ruta.s === 'usuarios') body = pantallaUsuarios(vista.datos);
   else body = pantallaGrupos(vista.datos);
   root.innerHTML = `${header()}<main class="wrap">${body}</main>${modalHTML()}`;
 }
@@ -441,6 +444,85 @@ function pantallaExpediente({ expediente: e, grupo: g, documentos, bitacora, cod
       </aside></div>`;
 }
 
+// ------------------------------------------------------------------ usuarios (Administración)
+function pantallaUsuarios({ usuarios = [], bitacora = [] }) {
+  if (rol() !== 'admin') return '<div class="card flat empty">Solo Administración puede ver los usuarios.</div>';
+  const yo = state.perfil.id;
+  const filas = usuarios.map((u) => `<tr class="${u.activo ? '' : 'inactivo'}">
+      <td><b>${esc(u.nombre)}</b>${u.id === yo ? ' <span class="muted">(tú)</span>' : ''}<span class="sub">${esc(u.email)}</span></td>
+      <td>${esc(ROLES[u.rol].label)} <span class="muted">· ${ROLES[u.rol].where}</span></td>
+      <td>${u.activo ? '<span class="pill done"><i></i>Activo</span>' : '<span class="pill na"><i></i>Desactivado</span>'}</td>
+      <td class="muted num">${u.ultimo_acceso ? fmt(u.ultimo_acceso) : 'Nunca ha entrado'}</td>
+      <td class="tdact">${u.id === yo ? '' : `<button class="btn sm" data-a="usr-area" data-u="${u.id}">Cambiar área</button>
+        <button class="btn sm" data-a="usr-clave" data-u="${u.id}">Restablecer contraseña</button>
+        ${u.activo ? `<button class="btn sm warn" data-a="usr-estado" data-u="${u.id}" data-v="0">Desactivar</button>` : `<button class="btn sm" data-a="usr-estado" data-u="${u.id}" data-v="1">Reactivar</button>`}`}</td></tr>`).join('');
+  return `<section class="page-head"><div><p class="eyebrow">Administración</p><h1>Usuarios y <span class="hl">áreas</span></h1>
+      <p class="lead">Cada persona entra con su propio usuario y ve solo el módulo de su área. Los usuarios no se borran: se desactivan, y todo cambio queda en la bitácora.</p></div>
+      <button class="btn primary" data-a="usr-nuevo">Dar de alta un usuario</button></section>
+    <div class="stack">
+      <div class="tablewrap"><table><thead><tr><th>Usuario</th><th>Área</th><th>Estado</th><th>Último acceso</th><th></th></tr></thead>
+        <tbody>${filas || '<tr><td colspan="5" class="empty">Sin usuarios.</td></tr>'}</tbody></table></div>
+      <div class="card flat stack"><div class="row space-between"><h3>Bitácora de usuarios</h3><span class="note">No se puede editar ni borrar</span></div>
+        ${bitacora.length ? `<ol class="log">${bitacora.map(lineaLog).join('')}</ol>` : '<p class="muted">Sin movimientos todavía.</p>'}</div>
+    </div>`;
+}
+
+function generarClave() {
+  const letras = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ';
+  const nums = '23456789';
+  const todo = letras + nums;
+  const r = crypto.getRandomValues(new Uint32Array(12));
+  let c = Array.from(r, (n) => todo[n % todo.length]);
+  c[0] = letras[r[0] % letras.length];
+  c[11] = nums[r[11] % nums.length];
+  return c.join('');
+}
+
+const campoClave = (id, label) => `<div class="field"><label for="${id}">${label}</label>
+  <div class="row nowrap"><input type="text" id="${id}" maxlength="72" autocomplete="new-password" spellcheck="false" class="mono-in" required><button type="button" class="btn sm" data-a="gen-clave" data-t="${id}">Generar</button></div>
+  <span class="note">Al menos 10 caracteres, con letras y números. Entrégala a la persona en privado; podrá cambiarla desde "Cambiar contraseña".</span></div>`;
+
+const opcionesRol = (sel) => Object.entries(ROLES).map(([k, r]) => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(r.label)} (${r.where})</option>`).join('');
+
+async function enviarUsuario(f, url, datos, msg) {
+  const err = f.querySelector('.err');
+  const btn = f.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    await api('POST', url, datos);
+    state.modal = null;
+    toast(msg);
+    recargar();
+  } catch (e) {
+    err.hidden = false;
+    err.textContent = e.message;
+    btn.disabled = false;
+  }
+}
+
+async function enviarMiClave(f) {
+  const err = f.querySelector('.err');
+  const actual = f.querySelector('#mc-actual').value;
+  const nueva = f.querySelector('#mc-nueva').value;
+  const otra = f.querySelector('#mc-otra').value;
+  const fallo = (m) => {
+    err.hidden = false;
+    err.textContent = m;
+  };
+  if (!actual || !nueva) return fallo('Escribe tu contraseña actual y la nueva.');
+  if (nueva !== otra) return fallo('La nueva contraseña no coincide en los dos campos.');
+  const btn = f.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    await api('POST', '/api/mi-clave', { actual, nueva });
+    cerrarModal();
+    toast('Contraseña cambiada. Úsala la próxima vez que entres.');
+  } catch (e) {
+    fallo(e.message);
+    btn.disabled = false;
+  }
+}
+
 // ------------------------------------------------------------------ modales
 function opcionesPaises() {
   const frec = PAISES_FREC.map((c) => PAISES.find((p) => p[1] === c)).filter(Boolean);
@@ -538,6 +620,51 @@ function modalHTML() {
       <p class="note">El pasaporte debe estar vigente en las fechas de la estancia. El cambio queda en la bitácora.</p>
       <p class="err" id="ve-err" hidden></p>
       <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Guardar</button></div></form>`;
+  }
+  const usr = m.u ? (vista.datos.usuarios || []).find((x) => x.id === m.u) : null;
+  if (m.kind === 'usr-nuevo') {
+    inner = `<form class="modal" data-form="usr-nuevo" novalidate autocomplete="off"><h2>Dar de alta un usuario</h2>
+      <div class="field"><label for="un-nombre">Nombre completo</label><input type="text" id="un-nombre" maxlength="120" required></div>
+      <div class="field"><label for="un-email">Correo</label><input type="text" id="un-email" maxlength="200" inputmode="email" autocapitalize="off" spellcheck="false" required placeholder="nombre@fairmont.com"></div>
+      <div class="field"><label for="un-rol">Área</label><select id="un-rol" required><option value="">Elige el área</option>${opcionesRol()}</select>
+        <span class="note">Las estaciones de captura (iPad) llevan un usuario propio, por ejemplo "Estación Lobby 2".</span></div>
+      ${campoClave('un-clave', 'Contraseña inicial')}
+      <p class="err" hidden></p>
+      <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Dar de alta</button></div></form>`;
+  }
+  if (m.kind === 'usr-area' && usr) {
+    inner = `<form class="modal" data-form="usr-area" novalidate><h2>Cambiar área</h2><p class="muted">${esc(usr.nombre)} · ${esc(usr.email)}</p>
+      <div class="field"><label for="ua-rol">Nueva área</label><select id="ua-rol">${opcionesRol(usr.rol)}</select></div>
+      <p class="note">Al cambiar de área verá solo el módulo de la nueva área desde su siguiente pantalla.</p>
+      <p class="err" hidden></p>
+      <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Cambiar área</button></div></form>`;
+  }
+  if (m.kind === 'usr-clave' && usr) {
+    inner = `<form class="modal" data-form="usr-clave" novalidate autocomplete="off"><h2>Restablecer contraseña</h2><p class="muted">${esc(usr.nombre)} · ${esc(usr.email)}</p>
+      ${campoClave('uc-clave', 'Nueva contraseña')}
+      <p class="note">Se cerrarán las sesiones que tenga abiertas.</p>
+      <p class="err" hidden></p>
+      <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Restablecer</button></div></form>`;
+  }
+  if (m.kind === 'usr-estado' && usr) {
+    inner = m.v
+      ? `<form class="modal" data-form="usr-estado" novalidate><h2>Reactivar usuario</h2><p class="muted">${esc(usr.nombre)} · ${esc(usr.email)}</p>
+        <p>Podrá volver a entrar con su contraseña actual, en el área ${esc(ROLES[usr.rol].label)}.</p><p class="err" hidden></p>
+        <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Reactivar</button></div></form>`
+      : `<form class="modal" data-form="usr-estado" novalidate><h2>Desactivar usuario</h2><p class="muted">${esc(usr.nombre)} · ${esc(usr.email)}</p>
+        <div class="field"><label for="ue-motivo">Motivo</label><select id="ue-motivo"><option value="">Elige un motivo</option><option>Ya no trabaja en el hotel</option><option>Cambió de departamento</option><option>Estación de captura fuera de servicio</option><option>Acceso comprometido</option></select></div>
+        <p class="note">No se borra nada: su nombre sigue en las bitácoras. Se cierran sus sesiones abiertas y no podrá entrar hasta que lo reactives.</p>
+        <p class="err" hidden></p>
+        <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn warn">Desactivar</button></div></form>`;
+  }
+  if (m.kind === 'miclave') {
+    inner = `<form class="modal" data-form="miclave" novalidate><h2>Cambiar mi contraseña</h2><p class="muted">${esc(state.perfil.nombre)}</p>
+      <div class="field"><label for="mc-actual">Contraseña actual</label><input type="password" id="mc-actual" autocomplete="current-password" required></div>
+      <div class="field"><label for="mc-nueva">Nueva contraseña</label><input type="password" id="mc-nueva" autocomplete="new-password" maxlength="72" required>
+        <span class="note">Al menos 10 caracteres, con letras y números.</span></div>
+      <div class="field"><label for="mc-otra">Repite la nueva contraseña</label><input type="password" id="mc-otra" autocomplete="new-password" maxlength="72" required></div>
+      <p class="err" hidden></p>
+      <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Cambiar contraseña</button></div></form>`;
   }
   return `<div class="scrim" data-a="scrim">${inner}</div>`;
 }
@@ -656,6 +783,24 @@ document.addEventListener('click', (ev) => {
     case 'vence':
       abrirModal({ kind: 'vence' });
       break;
+    case 'usr-nuevo':
+      abrirModal({ kind: 'usr-nuevo' });
+      break;
+    case 'usr-area':
+    case 'usr-clave':
+      abrirModal({ kind: d.a, u: d.u });
+      break;
+    case 'usr-estado':
+      abrirModal({ kind: 'usr-estado', u: d.u, v: d.v === '1' });
+      break;
+    case 'miclave':
+      abrirModal({ kind: 'miclave' });
+      break;
+    case 'gen-clave': {
+      const inp = document.getElementById(d.t);
+      if (inp) inp.value = generarClave();
+      break;
+    }
     case 'accion':
       ejecutar(d.op, null, null, el);
       break;
@@ -679,6 +824,19 @@ document.addEventListener('submit', (ev) => {
   if (f.dataset.form === 'evento') enviarEvento(f);
   if (f.dataset.form === 'riesgo') enviarGrupo(f, 'riesgo', { nivel: state.modal.k, nota: f.querySelector('#ri-nota').value.trim() }, 'Riesgo registrado.');
   if (f.dataset.form === 'vence') enviarVence(f);
+  if (f.dataset.form === 'miclave') enviarMiClave(f);
+  if (f.dataset.form === 'usr-nuevo') {
+    enviarUsuario(f, '/api/usuarios', {
+      nombre: f.querySelector('#un-nombre').value.trim(), email: f.querySelector('#un-email').value.trim(),
+      rol: f.querySelector('#un-rol').value, clave: f.querySelector('#un-clave').value,
+    }, 'Usuario dado de alta.');
+  }
+  if (f.dataset.form === 'usr-area') enviarUsuario(f, `/api/usuarios/${state.modal.u}/area`, { rol: f.querySelector('#ua-rol').value }, 'Área cambiada.');
+  if (f.dataset.form === 'usr-clave') enviarUsuario(f, `/api/usuarios/${state.modal.u}/clave`, { clave: f.querySelector('#uc-clave').value }, 'Contraseña restablecida.');
+  if (f.dataset.form === 'usr-estado') {
+    const sel = f.querySelector('#ue-motivo');
+    enviarUsuario(f, `/api/usuarios/${state.modal.u}/estado`, { activo: state.modal.v, motivo: sel ? sel.value : '' }, state.modal.v ? 'Usuario reactivado.' : 'Usuario desactivado.');
+  }
 });
 
 document.addEventListener('change', (ev) => {
