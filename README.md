@@ -124,7 +124,7 @@ O conecta este repositorio en Cloudflare (Workers → Create → Import a reposi
 - Considerar R2 para las fotos: un grupo de 500 huéspedes son ~2,000 fotos (~0.6 GB); el plan gratuito de Supabase
   Storage tiene 1 GB y R2 10 GB.
 
-## Aviso de privacidad (borrador pendiente de validación legal)
+## Aviso de privacidad (aprobado por el área legal)
 
 - **Personal:** al entrar por primera vez, cada usuario lee y acepta el aviso de privacidad y el compromiso de
   confidencialidad. Sin aceptarlo no puede ver ni cambiar nada. La aceptación queda en la bitácora de usuarios.
@@ -132,5 +132,5 @@ O conecta este repositorio en Cloudflare (Workers → Create → Import a reposi
   aviso completo en su teléfono. Sin *Acepto* no se puede tomar ni guardar ninguna foto. Si el huésped no acepta,
   queda anotado en su expediente y la captura se cierra sin fotos.
 - **Aviso completo:** en `/#/aviso-de-privacidad`, sin necesidad de sesión.
-- El texto está en `src/client/aviso.js`; lo resaltado falta confirmarlo con Legal. Al cambiar el texto se sube la
+- El texto está en `src/client/aviso.js`. Al cambiar el texto se sube la
   versión (también en `src/worker/index.ts`) y todos vuelven a aceptarlo.

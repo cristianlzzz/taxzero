@@ -1,10 +1,10 @@
-// Aviso de privacidad (LFPDPPP). BORRADOR: lo debe validar el área legal del hotel.
+// Aviso de privacidad (LFPDPPP). Aprobado por el área legal del hotel (2026-11-23).
 // Al cambiar cualquier texto, sube AVISO_VERSION (y la de src/worker/index.ts): todos los
 // usuarios lo vuelven a aceptar al entrar y cada huésped acepta la versión vigente.
 // Los datos entre {{ }} están pendientes de confirmar y se muestran resaltados.
 
-export const AVISO_VERSION = '2026-11-borrador-3';
-export const AVISO_BORRADOR = true;
+export const AVISO_VERSION = '2026-11-v1';
+export const AVISO_BORRADOR = false;
 export const RUTA_AVISO = '#/aviso-de-privacidad';
 
 const RESPONSABLE = 'OPERADORA HOTELERA DEL CORREDOR MAYAKOBA';
