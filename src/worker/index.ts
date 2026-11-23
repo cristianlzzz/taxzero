@@ -27,7 +27,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const CODIGO = /^TZ-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
 const MAX_FOTO = 8 * 1024 * 1024;
 // Versión vigente del aviso de privacidad. Debe coincidir con src/client/aviso.js.
-const AVISO_VERSION = '2026-11-borrador-2';
+const AVISO_VERSION = '2026-11-borrador-3';
 
 const app = new Hono<{ Bindings: Env; Variables: Vars }>();
 

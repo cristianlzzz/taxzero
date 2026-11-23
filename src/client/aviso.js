@@ -3,12 +3,12 @@
 // usuarios lo vuelven a aceptar al entrar y cada huésped acepta la versión vigente.
 // Los datos entre {{ }} están pendientes de confirmar y se muestran resaltados.
 
-export const AVISO_VERSION = '2026-11-borrador-2';
+export const AVISO_VERSION = '2026-11-borrador-3';
 export const AVISO_BORRADOR = true;
 export const RUTA_AVISO = '#/aviso-de-privacidad';
 
 const RESPONSABLE = 'OPERADORA HOTELERA DEL CORREDOR MAYAKOBA';
-const DOMICILIO = 'Carretera Federal 307 Cancún–Tulum km 298, Playa del Carmen, Solidaridad, Quintana Roo, C.P. 77710{{ (confirmar)}}';
+const DOMICILIO = 'Carretera Federal Cancún–Chetumal km 298, 77710 Playa del Carmen, Quintana Roo';
 const CORREO = 'mayakoba@fairmont.com';
 
 // Aviso integral, en español y en inglés (el huésped es extranjero).
@@ -25,7 +25,7 @@ export const AVISO_INTEGRAL = {
       ['Con quién compartimos sus datos',
         'Con el Servicio de Administración Tributaria y otras autoridades competentes cuando lo requieran conforme a la ley; estas transferencias no requieren su consentimiento. También los tratan, por cuenta del hotel y bajo contrato de confidencialidad, los proveedores que alojan el sistema y los documentos. No vendemos ni cedemos sus datos a terceros.'],
       ['Cuánto tiempo los conservamos',
-        'Durante el plazo que exijan las disposiciones fiscales para conservar la contabilidad y la documentación que la soporta{{ (confirmar plazo con Legal e Impuestos)}}. Después se bloquean y se suprimen conforme a la ley.'],
+        'Durante el plazo que exijan las disposiciones fiscales para conservar la contabilidad y la documentación que la soporta. Después se bloquean y se suprimen conforme a la ley.'],
       ['Cómo protegemos sus datos',
         'Solo el personal autorizado de cada área puede ver el expediente, cada consulta y cambio queda registrado y los documentos se guardan cifrados y protegidos contra borrado.'],
       ['Sus derechos (ARCO) y cómo revocar su consentimiento',
