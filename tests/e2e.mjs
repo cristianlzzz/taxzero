@@ -13,6 +13,7 @@ const C = {
   frontdesk: ['frontdesk.taxzero@example.com', process.env.CLAVE_FRONTDESK],
   ipad: ['ipad1.taxzero@example.com', process.env.CLAVE_IPAD],
   credito: ['credito.taxzero@example.com', process.env.CLAVE_CREDITO],
+  impuestos: ['impuestos.taxzero@example.com', process.env.CLAVE_IMPUESTOS],
 };
 mkdirSync(OUT, { recursive: true });
 
@@ -213,6 +214,139 @@ let codigo, codigo2;
   await page.click('.doc-b .view >> nth=0');
   await page.waitForSelector('.zoom-img');
   await page.screenshot({ path: `${OUT}/13-zoom.png` });
+  await ctx.close();
+}
+
+// ---------------------------------------------------------------- 4b. Revisiones (etapa 2)
+async function abrirExp(page, apellido) {
+  await page.goto(BASE + '/#/');
+  await page.click(`a.gcard:has-text("${nombreGrupo}")`);
+  await page.click(`tr:has-text("${apellido}") >> text=Abrir`);
+  await page.waitForSelector(`h1:has-text("${apellido}")`);
+}
+async function conMotivo(page, op, motivoIdx = 1, docs = []) {
+  await page.click(`button[data-op="${op}"]`);
+  await page.selectOption('#m-sel', { index: motivoIdx });
+  for (const d of docs) await page.check(`input[name=rd][value=${d}]`);
+  await page.click('#m-ok');
+}
+const marcarTodo = async (page) => {
+  for (const c of await page.$$('[data-check]')) await c.check();
+};
+
+{
+  // Grupos pide recapturar el pasaporte de Carter
+  const { ctx, page } = await sesion('grupos');
+  await abrirExp(page, 'Carter');
+  ok(await page.isDisabled('#btn-go'), 'Aprobar empieza deshabilitado');
+  await page.click('button[data-op="recaptura"]');
+  ok(await page.isDisabled('#m-ok'), 'La recaptura exige motivo y documentos');
+  await page.click('[data-a=cerrar-modal]');
+  await conMotivo(page, 'recaptura', 1, ['pasaporte']);
+  await page.waitForSelector(`h1:has-text("${nombreGrupo}")`);
+  await page.waitForSelector('tr:has-text("Carter") >> text=Captura incompleta');
+  ok(true, 'Tras pedir recaptura queda como Captura incompleta');
+  await abrirExp(page, 'Becker');
+  await conMotivo(page, 'no_aplica', 2);
+  await page.waitForSelector('tr:has-text("Becker") >> text=No aplica');
+  ok(true, 'Grupos marcó No aplica con motivo');
+  await ctx.close();
+}
+{
+  // Front Desk genera otro QR y el iPad solo pide el pasaporte
+  const { ctx, page } = await sesion('frontdesk');
+  await abrirExp(page, 'Carter');
+  ok(await page.isVisible('text=Se pidió recapturar: pasaporte'), 'Front Desk ve qué hay que recapturar');
+  await page.click('button[data-a=qr]');
+  await page.waitForSelector('.qrbox');
+  const codigo3 = (await page.textContent('.qrbox .code')).trim();
+  await ctx.close();
+  const ip = await sesion('ipad', devices['iPad (gen 7) landscape']);
+  await ip.page.fill('#cod', codigo3);
+  await ip.page.click('button:has-text("Continuar")');
+  await ip.page.waitForSelector('text=Paso 1 de 1: Pasaporte');
+  ok(true, 'La recaptura solo pide el documento señalado');
+  await ip.page.setInputFiles('#foto', F.pasaporte);
+  await ip.page.click('button:has-text("Usar esta foto")');
+  await ip.page.click('button:has-text("Enviar a Grupos")');
+  await ip.page.waitForSelector('text=Expediente enviado a Grupos');
+  await ip.ctx.close();
+}
+{
+  const { ctx, page } = await sesion('grupos');
+  await abrirExp(page, 'Carter');
+  ok(await page.isVisible('text=Recaptura enviada a Grupos'), 'La bitácora registra la recaptura');
+  ok(await page.isVisible('.doc:has-text("Pasaporte") >> text=v2 · actual'), 'El pasaporte tiene versión 2');
+  await marcarTodo(page);
+  await page.click('#btn-go');
+  await page.waitForSelector('tr:has-text("Carter") >> text=En validación de Crédito');
+  ok(true, 'Grupos aprobó y pasó a Crédito');
+  await ctx.close();
+}
+{
+  // Crédito: monto del grupo, devuelve a Grupos
+  const { ctx, page } = await sesion('credito');
+  await page.click(`a.gcard:has-text("${nombreGrupo}")`);
+  await page.click('button[data-a=monto]');
+  await page.fill('#mo-val', '18,450.00');
+  await page.fill('#mo-nota', 'Autorizado por Cuentas por pagar, oficio CP-118');
+  await page.click('.modal button[type=submit]');
+  await page.waitForSelector('.big-num:has-text("USD 18,450.00")');
+  await page.click('button[data-a=monto]');
+  await page.fill('#mo-val', '18,600.00');
+  await page.fill('#mo-nota', 'Corrección autorizada por ADOF');
+  await page.click('.modal button[type=submit]');
+  await page.waitForSelector('.big-num:has-text("USD 18,600.00")');
+  ok(await page.isVisible('s:has-text("USD 18,450.00")'), 'El monto anterior sigue visible');
+  await page.screenshot({ path: `${OUT}/14-credito-grupo.png`, fullPage: true });
+  await abrirExp(page, 'Carter');
+  await page.waitForSelector('text=Validación de Crédito');
+  await conMotivo(page, 'devolver_grupos', 2);
+  await page.waitForSelector('tr:has-text("Carter") >> text=Devuelto a Grupos');
+  ok(true, 'Crédito devolvió a Grupos con motivo');
+  await ctx.close();
+}
+{
+  const { ctx, page } = await sesion('grupos');
+  await abrirExp(page, 'Carter');
+  ok(await page.isVisible('.notice:has-text("Devuelto a Grupos")'), 'Grupos ve por qué se lo devolvieron');
+  const id = page.url().split('/').pop();
+  const r = await page.evaluate(async (id) => (await fetch(`/api/expedientes/${id}/accion`, { method: 'POST', headers: { 'x-taxzero': '1', 'content-type': 'application/json' }, body: JSON.stringify({ accion: 'aprobar', estado: 'rev_grupos' }) })).status, id);
+  ok(r === 409, `Una acción sobre un estado viejo se rechaza (${r})`);
+  await marcarTodo(page);
+  await page.click('#btn-go');
+  await page.waitForSelector('tr:has-text("Carter") >> text=En validación de Crédito');
+  await ctx.close();
+}
+{
+  const { ctx, page } = await sesion('credito');
+  await abrirExp(page, 'Carter');
+  await page.screenshot({ path: `${OUT}/15-credito-expediente.png`, fullPage: true });
+  await marcarTodo(page);
+  await page.click('#btn-go');
+  await page.waitForSelector('tr:has-text("Carter") >> text=En revisión de Impuestos');
+  ok(true, 'Crédito validó y pasó a Impuestos');
+  await ctx.close();
+}
+{
+  const { ctx, page } = await sesion('impuestos');
+  await abrirExp(page, 'Carter');
+  const orden = await page.$$eval('.doc-h h3', (hs) => hs.map((h) => h.textContent.replace(/^\d/, '').split('·')[0].trim()));
+  ok(orden.join('|') === 'Registration card|Pasaporte|Forma migratoria|Comprobante de pago', `Impuestos ve el orden del archivo físico (${orden.join(', ')})`);
+  await marcarTodo(page);
+  await page.click('#btn-go');
+  await page.waitForSelector('h3:has-text("Expediente cerrado")');
+  ok(true, 'Impuestos cerró el expediente');
+  await page.screenshot({ path: `${OUT}/16-impuestos-cerrado.png`, fullPage: true });
+  await conMotivo(page, 'reabrir', 1);
+  await page.waitForSelector('h3:has-text("Revisión final")');
+  ok(await page.isVisible('text=Reabierto por auditoría'), 'Reabrir por auditoría lo regresa a revisión');
+  await page.click('.crumbs a >> nth=1');
+  await page.click('button[data-a=factura]');
+  await page.fill('#fa-folio', 'FMK-A 20931');
+  await page.click('.modal button[type=submit]');
+  await page.waitForSelector('b:has-text("FMK-A 20931")');
+  ok(await page.isVisible('text=USD 18,600.00'), 'Impuestos ve el monto registrado por Crédito');
   await ctx.close();
 }
 

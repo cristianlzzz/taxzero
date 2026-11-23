@@ -1,13 +1,13 @@
 // Pantallas de escritorio (PC): Grupos, Front Desk, Crédito, Impuestos y Administración.
 import qrcode from 'qrcode-generator';
-import { DOCS, DOC_ORDER, ESTADOS, FILE_ORDER, FMM_TIPOS, PAISES, PAISES_FREC, QUEUE, QUEUE_WORD } from './catalogos.js';
+import { CHECKS, DOCS, DOC_ORDER, ESTADOS, FILE_ORDER, FMM_TIPOS, MOTIVOS, PAISES, PAISES_FREC, QUEUE, QUEUE_WORD } from './catalogos.js';
 import { api, dateTxt, esc, fmt, folioExp, folioGrupo, mmss } from './util.js';
 import { header, state, toast } from './main.js';
 
 let root;
 let vista = null; // { ruta, datos, error }
 let carga = 0;
-const ui = { filtro: {}, ver: {} };
+const ui = { filtro: {}, ver: {}, checks: {} };
 
 const rol = () => state.perfil.rol;
 const cola = () => QUEUE[rol()] || [];
@@ -164,7 +164,7 @@ async function enviarAlta(f) {
 }
 
 // ------------------------------------------------------------------ grupo
-function pantallaGrupo({ grupo: g, expedientes, codigos }) {
+function pantallaGrupo({ grupo: g, expedientes, codigos, montos = [], facturas = [] }) {
   const activos = new Map(codigos.map((c) => [c.expediente_id, c]));
   const clave = g.id;
   const f = ui.filtro[clave] || 'todos';
@@ -200,10 +200,38 @@ function pantallaGrupo({ grupo: g, expedientes, codigos }) {
         <div><dt>Huéspedes dados de alta</dt><dd class="num">${expedientes.length}</dd></div>
         <div><dt>Contacto</dt><dd>${esc(g.contacto || 'Sin capturar')}</dd></div>
       </dl></div>
+      ${extraGrupo(g, montos, facturas)}
       <div class="seg" role="tablist" aria-label="Filtrar por estado">${filtros.map(([k, l]) => `<button class="tab" role="tab" data-a="filtro" data-k="${k}" aria-selected="${f === k}">${l}</button>`).join('')}</div>
       <div class="tablewrap"><table><thead><tr><th>Huésped</th><th>Nacionalidad</th><th>Pasaporte</th><th>Estado</th><th>Último cambio</th><th></th></tr></thead>
       <tbody>${filas || `<tr><td colspan="6" class="empty">${expedientes.length ? 'Ningún expediente con este filtro.' : 'Aún no hay huéspedes en este grupo. Front Desk los da de alta desde su PC.'}</td></tr>`}</tbody></table></div>
     </div>`;
+}
+
+function extraGrupo(g, montos, facturas) {
+  const ultimo = montos[montos.length - 1];
+  const fact = facturas[facturas.length - 1];
+  if (rol() === 'credito') {
+    const hist = montos.slice().reverse().map((m, i) => `<li><div>${i ? `<s>${esc(m.valor)}</s> <span class="muted">(anterior)</span>` : esc(m.valor)}</div><div class="t">${fmt(m.ts)} · ${esc(m.registrado_por_nombre)}</div><span class="m nota-gris">${esc(m.nota)}</span></li>`).join('');
+    return `<div class="card flat stack">
+      <div class="row space-between"><div><p class="eyebrow">Monto final de devolución del grupo</p>
+        <p class="big-num num">${ultimo ? esc(ultimo.valor) : '<span class="muted">Sin registrar</span>'}</p></div>
+        <button class="btn primary" data-a="monto">${ultimo ? 'Registrar un monto nuevo' : 'Registrar monto'}</button></div>
+      <p class="note">Cada huésped pagó su propia cuenta; revisa su comprobante en cada expediente. La plataforma no calcula este monto: regístralo tal como lo autorizó Cuentas por pagar.</p>
+      ${hist ? `<ol class="log">${hist}</ol>` : ''}</div>`;
+  }
+  if (rol() === 'impuestos') {
+    return `<div class="card flat row space-between">
+      <div><p class="eyebrow">Factura del grupo</p><p>${fact ? `Folio <b class="mono">${esc(fact.folio)}</b> · ${fmt(fact.ts)} · ${esc(fact.registrado_por_nombre)}` : '<span class="muted">Sin folio registrado</span>'}</p>
+      ${facturas.length > 1 ? `<p class="note">Folios anteriores: ${facturas.slice(0, -1).reverse().map((f) => esc(f.folio)).join(', ')}</p>` : ''}
+      <p class="note">Monto registrado por Crédito: <b>${ultimo ? esc(ultimo.valor) : 'pendiente'}</b></p></div>
+      <button class="btn" data-a="factura">${fact ? 'Registrar otro folio' : 'Registrar folio de factura'}</button></div>`;
+  }
+  if (['grupos', 'admin'].includes(rol()) && (ultimo || fact)) {
+    return `<div class="card flat"><dl class="info">
+      <div><dt>Monto registrado por Crédito</dt><dd>${ultimo ? esc(ultimo.valor) : 'Sin registrar'}</dd></div>
+      <div><dt>Folio de factura</dt><dd class="mono">${fact ? esc(fact.folio) : 'Sin registrar'}</dd></div></dl></div>`;
+  }
+  return '';
 }
 
 // ------------------------------------------------------------------ expediente
@@ -247,9 +275,41 @@ function accionesExp(e, codigo) {
     return wrap('Captura en iPad', `${recap}<p class="note">Genera un código QR y muéstralo en la estación de captura. Sirve una sola vez y vence a los 15 minutos.</p>
       <button class="btn primary block" data-a="qr" data-e="${e.id}">${codigo ? 'Ver QR activo' : 'Generar QR'}</button>`);
   }
-  // Las revisiones de Grupos, Crédito e Impuestos llegan en la siguiente etapa.
-  if (cola().includes(e.estado)) {
-    return wrap('Revisión', '<p class="note">Este expediente está en tu bandeja. Las acciones de revisión (aprobar, devolver con motivo) se activan en la siguiente etapa.</p>');
+  const chk = CHECKS[rol()] || [];
+  const marcadas = ui.checks[e.id] || [];
+  const todas = chk.length && chk.every((_, i) => marcadas.includes(i));
+  const lista = chk.length
+    ? `<div class="checks">${chk.map((c, i) => `<label><input type="checkbox" data-check="${i}" ${marcadas.includes(i) ? 'checked' : ''}><span>${c}</span></label>`).join('')}</div>`
+    : '';
+  const boton = (accion, texto) => `<button class="btn primary block" data-a="accion" data-op="${accion}" id="btn-go" ${todas ? '' : 'disabled'}>${texto}</button>`;
+  const motivo = (op, texto, warn) => `<button class="btn sm ${warn ? 'warn' : ''}" data-a="motivo" data-op="${op}">${texto}</button>`;
+  const nota = `<p class="note">El botón se habilita al marcar todas las verificaciones.</p>`;
+  if (rol() === 'grupos') {
+    if (['rev_grupos', 'dev_grupos'].includes(e.estado)) {
+      return wrap('Verificación de Grupos', `${lista}${boton('aprobar', 'Aprobar y enviar a Crédito')}
+        <div class="row">${motivo('recaptura', 'Pedir recaptura')}${motivo('no_aplica', 'No aplica')}</div>${nota}`);
+    }
+    if (['pendiente', 'incompleta'].includes(e.estado)) {
+      return wrap('Esperando captura', `<p class="note">Front Desk genera el QR y el huésped pasa a la estación de captura.</p><div class="row">${motivo('no_aplica', 'Marcar No aplica')}</div>`);
+    }
+    return wrap('Sin acciones', `<p class="note">Este expediente ya no está en Grupos.</p>`);
+  }
+  if (rol() === 'credito') {
+    if (['val_credito', 'dev_credito'].includes(e.estado)) {
+      return wrap('Validación de Crédito', `${lista}${boton('validar', 'Validar y enviar a Impuestos')}
+        <div class="row">${motivo('devolver_grupos', 'Devolver a Grupos', true)}</div>${nota}`);
+    }
+    return wrap('Sin acciones', `<p class="note">${e.estado === 'cerrado' ? 'Expediente cerrado por Impuestos.' : 'Este expediente no está en Crédito.'}</p>`);
+  }
+  if (rol() === 'impuestos') {
+    if (e.estado === 'rev_impuestos') {
+      return wrap('Revisión final', `${lista}${boton('cerrar', 'Cerrar expediente')}
+        <div class="row">${motivo('devolver_credito', 'Devolver a Crédito', true)}</div>${nota}`);
+    }
+    if (e.estado === 'cerrado') {
+      return wrap('Expediente cerrado', `<p class="note">Un expediente cerrado no se modifica. Si una auditoría lo requiere, se puede reabrir con motivo.</p><div class="row">${motivo('reabrir', 'Reabrir por auditoría')}</div>`);
+    }
+    return wrap('Sin acciones', `<p class="note">Este expediente todavía no llega a Impuestos.</p>`);
   }
   return '';
 }
@@ -259,6 +319,7 @@ function pantallaExpediente({ expediente: e, grupo: g, documentos, bitacora, cod
   return `${crumbs([{ t: 'Grupos', href: '#/' }, { t: g.nombre, href: `#/grupos/${g.id}` }, { t: `${e.nombre} ${e.apellidos}` }])}
     <section class="page-head"><div><p class="eyebrow mono">${folioExp(e.folio)}</p><h1>${esc(e.nombre)} ${esc(e.apellidos)}</h1>
       <div class="row mt-8">${pill(e.estado)}<span class="muted">${esc(e.nacionalidad)}</span></div></div></section>
+    ${['dev_grupos', 'dev_credito'].includes(e.estado) && bitacora[0]?.motivo ? `<div class="notice mt-neg"><b>${esc(bitacora[0].accion)}</b> por ${esc(bitacora[0].usuario_nombre)} (${esc(bitacora[0].rol)}). Motivo: ${esc(bitacora[0].motivo)}</div>` : ''}
     ${e.nacionalidad_codigo === 'MEX' ? '<div class="notice mt-neg">Nacionalidad mexicana: no aplica para tax free. Grupos lo marcará como No aplica.</div>' : ''}
     ${rol() === 'impuestos' ? '<p class="note mt-neg">Documentos en el orden del archivo físico.</p>' : ''}
     <div class="exp">${docsBloque(documentos)}
@@ -317,6 +378,33 @@ function modalHTML() {
     inner = `<div class="modal wide" role="dialog" aria-label="${esc(DOCS[m.t].label)}"><div class="row space-between"><h2>${esc(DOCS[m.t].label)}</h2>
       <div class="zoom-tools"><button class="btn sm" data-a="zoom-real" aria-pressed="${!!m.full}">${m.full ? 'Ajustar a la pantalla' : 'Tamaño real'}</button><a class="btn sm" href="/api/documentos/${m.d}/imagen" target="_blank" rel="noopener">Abrir en otra pestaña</a><button class="btn sm" data-a="cerrar-modal">Cerrar</button></div></div>
       <div class="zoom-wrap ${m.full ? 'full' : ''}"><img class="zoom-img" src="/api/documentos/${m.d}/imagen" alt="${esc(DOCS[m.t].label)}"></div></div>`;
+  }
+  if (m.kind === 'motivo') {
+    const M = MOTIVOS[m.op];
+    const e = vista.datos.expediente;
+    inner = `<form class="modal" data-form="motivo" novalidate><h2>${M.t}</h2><p class="muted">${esc(e.nombre)} ${esc(e.apellidos)} · <span class="mono">${folioExp(e.folio)}</span></p>
+      <div class="field"><label for="m-sel">Motivo</label><select id="m-sel" required><option value="">Elige un motivo</option>${M.list.map((x) => `<option>${esc(x)}</option>`).join('')}<option value="__otro">Otro motivo</option></select></div>
+      ${m.op === 'recaptura' ? `<div class="field"><span class="flabel">Documentos a recapturar</span><div class="checks">${DOC_ORDER.map((t) => `<label><input type="checkbox" name="rd" value="${t}"><span>${DOCS[t].label}</span></label>`).join('')}</div></div>` : ''}
+      <div class="field"><label for="m-det">Detalle <span class="muted">(obligatorio si eliges "Otro motivo")</span></label><textarea id="m-det" maxlength="400"></textarea></div>
+      <p class="note">El motivo queda en la bitácora del expediente y no se puede borrar.</p>
+      <p class="err" id="m-err" hidden></p>
+      <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary" id="m-ok" disabled>${M.btn}</button></div></form>`;
+  }
+  if (m.kind === 'monto') {
+    const g = vista.datos.grupo;
+    inner = `<form class="modal" data-form="monto" novalidate><h2>Registrar monto final de devolución</h2><p class="muted">${esc(g.nombre)}</p>
+      <div class="field"><label for="mo-val">Monto en USD, tal como lo autorizó Cuentas por pagar</label><input type="text" id="mo-val" inputmode="decimal" maxlength="30" placeholder="Ej. 18,450.00" required></div>
+      <div class="field"><label for="mo-nota">Quién autorizó y referencia</label><textarea id="mo-nota" maxlength="500" required placeholder="Ej. Autorizado por ADOF, oficio CP-121"></textarea></div>
+      ${vista.datos.montos?.length ? '<p class="note">El monto anterior seguirá visible como versión anterior.</p>' : ''}
+      <p class="err" id="mo-err" hidden></p>
+      <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Registrar monto</button></div></form>`;
+  }
+  if (m.kind === 'factura') {
+    const g = vista.datos.grupo;
+    inner = `<form class="modal" data-form="factura" novalidate><h2>Registrar folio de factura</h2><p class="muted">${esc(g.nombre)}</p>
+      <div class="field"><label for="fa-folio">Folio de la factura emitida</label><input type="text" id="fa-folio" maxlength="60" required placeholder="Ej. FMK-A 20931"></div>
+      <p class="err" id="fa-err" hidden></p>
+      <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Registrar folio</button></div></form>`;
   }
   return `<div class="scrim" data-a="scrim">${inner}</div>`;
 }
@@ -417,6 +505,18 @@ document.addEventListener('click', (ev) => {
     case 'zoom':
       abrirModal({ kind: 'zoom', d: d.d, t: d.t });
       break;
+    case 'motivo':
+      abrirModal({ kind: 'motivo', op: d.op });
+      break;
+    case 'monto':
+      abrirModal({ kind: 'monto' });
+      break;
+    case 'factura':
+      abrirModal({ kind: 'factura' });
+      break;
+    case 'accion':
+      ejecutar(d.op, null, null, el);
+      break;
     case 'zoom-real':
       state.modal.full = !state.modal.full;
       abrirModal(state.modal);
@@ -431,9 +531,22 @@ document.addEventListener('submit', (ev) => {
   ev.preventDefault();
   if (f.dataset.form === 'alta') enviarAlta(f);
   if (f.dataset.form === 'altahues') enviarHuesped(f);
+  if (f.dataset.form === 'motivo') enviarMotivo(f);
+  if (f.dataset.form === 'monto') enviarGrupo(f, 'monto', { valor: f.querySelector('#mo-val').value.trim(), nota: f.querySelector('#mo-nota').value.trim() }, 'Monto registrado.');
+  if (f.dataset.form === 'factura') enviarGrupo(f, 'factura', { folio: f.querySelector('#fa-folio').value.trim() }, 'Folio registrado.');
 });
 
 document.addEventListener('change', (ev) => {
+  const c = ev.target.closest?.('[data-check]');
+  if (c && vista?.datos?.expediente) {
+    const id = vista.datos.expediente.id;
+    const i = +c.dataset.check;
+    const arr = (ui.checks[id] = (ui.checks[id] || []).filter((x) => x !== i));
+    if (c.checked) arr.push(i);
+    const btn = document.getElementById('btn-go');
+    if (btn) btn.disabled = !(CHECKS[rol()] || []).every((_, j) => arr.includes(j));
+  }
+  validarMotivo();
   if (ev.target.id === 'h-nac') {
     const n = document.getElementById('h-nac-mx');
     if (n) n.hidden = ev.target.value !== 'MEX';
@@ -443,6 +556,89 @@ document.addEventListener('change', (ev) => {
 document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape' && state.modal && state.perfil?.rol !== 'ipad') cerrarModal();
 });
+
+document.addEventListener('input', validarMotivo);
+
+const HECHO = {
+  aprobar: 'Aprobado. El expediente pasó a Crédito.',
+  recaptura: 'Se pidió la recaptura. Front Desk generará un nuevo QR.',
+  no_aplica: 'Marcado como No aplica.',
+  validar: 'Validado. El expediente pasó a Impuestos.',
+  devolver_grupos: 'Devuelto a Grupos con el motivo registrado.',
+  cerrar: 'Expediente cerrado.',
+  devolver_credito: 'Devuelto a Crédito con el motivo registrado.',
+  reabrir: 'Expediente reabierto. El cierre anterior sigue en la bitácora.',
+};
+
+async function ejecutar(accion, motivo, docs, btn, errEl) {
+  const e = vista.datos.expediente;
+  if (btn) btn.disabled = true;
+  try {
+    await api('POST', `/api/expedientes/${e.id}/accion`, { accion, estado: e.estado, motivo, docs });
+    delete ui.checks[e.id];
+    state.modal = null;
+    toast(HECHO[accion]);
+    if (['aprobar', 'validar', 'devolver_grupos', 'devolver_credito', 'recaptura', 'no_aplica'].includes(accion)) {
+      location.hash = `#/grupos/${e.grupo_id}`;
+    } else {
+      recargar();
+    }
+  } catch (err) {
+    if (btn) btn.disabled = false;
+    if (err.status === 409 && /Otra persona/.test(err.message)) {
+      state.modal = null;
+      toast(err.message);
+      recargar();
+      return;
+    }
+    if (errEl) {
+      errEl.hidden = false;
+      errEl.textContent = err.message;
+    } else toast(err.message);
+  }
+}
+
+function leerMotivo(f) {
+  const sel = f.querySelector('#m-sel').value;
+  const det = f.querySelector('#m-det').value.trim();
+  return sel === '__otro' ? det : sel ? sel + (det ? '. ' + det : '') : '';
+}
+
+function validarMotivo() {
+  const f = document.querySelector('[data-form="motivo"]');
+  if (!f) return;
+  const sel = f.querySelector('#m-sel').value;
+  const det = f.querySelector('#m-det').value.trim();
+  let ok = sel && (sel !== '__otro' || det.length >= 3);
+  if (state.modal?.op === 'recaptura') ok = ok && f.querySelectorAll('input[name=rd]:checked').length > 0;
+  f.querySelector('#m-ok').disabled = !ok;
+}
+
+function enviarMotivo(f) {
+  const docs = [...f.querySelectorAll('input[name=rd]:checked')].map((x) => x.value);
+  ejecutar(state.modal.op, leerMotivo(f), docs.length ? docs : null, f.querySelector('#m-ok'), f.querySelector('#m-err'));
+}
+
+async function enviarGrupo(f, tipo, datos, msg) {
+  const err = f.querySelector('.err');
+  if (Object.values(datos).some((v) => !v)) {
+    err.hidden = false;
+    err.textContent = 'Llena todos los campos.';
+    return;
+  }
+  const btn = f.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    await api('POST', `/api/grupos/${vista.datos.grupo.id}/${tipo}`, datos);
+    state.modal = null;
+    toast(msg);
+    recargar();
+  } catch (e) {
+    err.hidden = false;
+    err.textContent = e.message;
+    btn.disabled = false;
+  }
+}
 
 setInterval(() => {
   document.querySelectorAll('[data-vence]').forEach((el) => {

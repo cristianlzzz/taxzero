@@ -278,3 +278,4 @@ a.btn{text-decoration:none}
 .preview{min-height:0}
 .preview img{max-height:min(440px,48vh)}
 .station .fd-top h1{font-size:28px}
+.log .m.nota-gris{color:var(--muted)}
