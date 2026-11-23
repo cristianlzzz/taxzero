@@ -3,13 +3,13 @@
 // usuarios lo vuelven a aceptar al entrar y cada huésped acepta la versión vigente.
 // Los datos entre {{ }} están pendientes de confirmar y se muestran resaltados.
 
-export const AVISO_VERSION = '2026-11-borrador';
+export const AVISO_VERSION = '2026-11-borrador-2';
 export const AVISO_BORRADOR = true;
 export const RUTA_AVISO = '#/aviso-de-privacidad';
 
-const RESPONSABLE = 'Operadora Hotelera del Corredor Mayakoba{{, S.A. de C.V. (confirmar razón social)}}';
+const RESPONSABLE = 'OPERADORA HOTELERA DEL CORREDOR MAYAKOBA';
 const DOMICILIO = 'Carretera Federal 307 Cancún–Tulum km 298, Playa del Carmen, Solidaridad, Quintana Roo, C.P. 77710{{ (confirmar)}}';
-const CORREO = '{{correo de privacidad del hotel}}';
+const CORREO = 'mayakoba@fairmont.com';
 
 // Aviso integral, en español y en inglés (el huésped es extranjero).
 export const AVISO_INTEGRAL = {
