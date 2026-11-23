@@ -134,3 +134,12 @@ O conecta este repositorio en Cloudflare (Workers → Create → Import a reposi
 - **Aviso completo:** en `/#/aviso-de-privacidad`, sin necesidad de sesión.
 - El texto está en `src/client/aviso.js`. Al cambiar el texto se sube la
   versión (también en `src/worker/index.ts`) y todos vuelven a aceptarlo.
+
+## Documentos en Cloudflare R2
+
+- Las fotos de los huéspedes y los documentos del evento se guardan en el bucket privado `taxzero-documentos`
+  de Cloudflare R2. No tiene acceso público: solo la app los guarda y los entrega, y solo a quien tiene permiso.
+- Antes de guardar, la app pregunta a la base si ese usuario puede subir a esa carpeta (por ejemplo, el iPad solo si
+  el huésped aceptó el aviso y la captura sigue activa).
+- El bucket tiene una regla de candado (*bucket lock*) indefinida: ningún archivo se puede borrar ni reemplazar.
+- Los archivos de prueba guardados antes de este cambio siguen en Supabase Storage y se leen desde ahí.

@@ -4,6 +4,7 @@ import {
   Db, Env, ErrorApi, Tokens, cerrarCapturasVencidas, cerrarSesion, iniciarSesion, renovarSesion,
 } from './supabase';
 import { libro } from './xlsx';
+import { guardarArchivo, leerArchivo } from './archivos';
 
 type Rol = 'admin' | 'grupos' | 'frontdesk' | 'ipad' | 'credito' | 'impuestos';
 interface Perfil { id: string; nombre: string; rol: Rol; aviso_version?: string | null }
@@ -238,7 +239,7 @@ app.post('/api/grupos/:id/documentos', async (c) => {
   if (!a.firma.every((b, i) => ini[i] === b)) throw new ErrorApi(415, 'El archivo no corresponde a su tipo. Vuelve a exportarlo.');
   const ruta = `grp/${id}/${tipo}/${crypto.randomUUID()}.${a.ext}`;
   const db = c.get('db');
-  await db.subir('documentos', ruta, cuerpo, mime, 'No se pudo guardar el archivo. Intenta de nuevo.');
+  await guardarArchivo(c.env, db, ruta, cuerpo, mime, 'puede_subir_doc_grupo', 'No se pudo guardar el archivo. Intenta de nuevo.');
   const doc = await db.rpc<string>('registrar_doc_grupo', {
     p_grupo: id, p_tipo: tipo, p_ruta: ruta, p_nombre: nombre, p_mime: mime, p_bytes: cuerpo.byteLength,
   });
@@ -251,10 +252,10 @@ app.get('/api/documentos-grupo/:id/archivo', async (c) => {
   const db = c.get('db');
   const [doc] = await db.select(`documentos_grupo?id=eq.${id}&select=ruta,mime,nombre_archivo`);
   if (!doc) throw new ErrorApi(404, 'El documento no existe.');
-  const res = await db.descargar('documentos', doc.ruta);
+  const cuerpo = await leerArchivo(c.env, db, doc.ruta);
   const enLinea = doc.mime === 'application/pdf' || doc.mime.startsWith('image/');
   const nombre = encodeURIComponent(doc.nombre_archivo);
-  return new Response(res.body, {
+  return new Response(cuerpo, {
     headers: {
       'content-type': doc.mime,
       'content-disposition': `${enLinea ? 'inline' : 'attachment'}; filename*=UTF-8''${nombre}`,
@@ -434,8 +435,8 @@ app.get('/api/documentos/:id/imagen', async (c) => {
   const db = c.get('db');
   const [doc] = await db.select(`documentos?id=eq.${id}&select=ruta,mime`);
   if (!doc) throw new ErrorApi(404, 'El documento no existe.');
-  const res = await db.descargar('documentos', doc.ruta);
-  return new Response(res.body, {
+  const cuerpo = await leerArchivo(c.env, db, doc.ruta);
+  return new Response(cuerpo, {
     headers: {
       'content-type': doc.mime || 'image/jpeg',
       // Datos personales: no se guardan en cachés compartidas.
@@ -483,7 +484,7 @@ app.post('/api/captura/:codigo/foto', async (c) => {
   const n = (v: string | undefined) => (v && /^\d{1,6}(\.\d+)?$/.test(v) ? Number(v) : null);
   const ruta = `exp/${exp}/${tipo}/${crypto.randomUUID()}.jpg`;
   const db = c.get('db');
-  await db.subir('documentos', ruta, cuerpo, 'image/jpeg');
+  await guardarArchivo(c.env, db, ruta, cuerpo, 'image/jpeg', 'puede_subir_documento', 'La captura ya no está activa. Pide a Front Desk un código nuevo.');
   const version = await db.rpc<number>('registrar_documento', {
     p_codigo: codigo, p_tipo: tipo, p_ruta: ruta, p_fmm_tipo: tipo === 'fmm' ? fmm || 'fmm' : null,
     p_bytes: cuerpo.byteLength, p_ancho: n(q.ancho), p_alto: n(q.alto), p_nitidez: n(q.nitidez),
