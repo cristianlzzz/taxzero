@@ -52,7 +52,20 @@ información, y nada se borra.
 - Contraseñas: al menos 10 caracteres, con letras y números. Se guardan cifradas por Supabase Auth.
 - La bitácora de usuarios solo la ve Administración.
 
-Pendiente: reportes y bitácora general.
+## Etapa 5: reportes y bitácora general
+
+- **Avance**: tabla de todos los grupos con cuántos expedientes hay en cada paso (por capturar, Grupos, Crédito,
+  Impuestos, cerrados, no aplica) y cuántos están detenidos (3 días o más sin movimiento y sin cerrar).
+  En cada grupo se marcan los expedientes detenidos y hay un filtro para verlos. Solo cuenta expedientes; no calcula montos.
+- **Descargar en Excel** la lista de huéspedes de un grupo (Grupos, Crédito, Impuestos y Administración), con los datos
+  del grupo, el organizador, los folios de factura y el monto registrado por Crédito tal como se capturó.
+- **Bitácora general** (Administración e Impuestos): todos los movimientos, con filtros por fechas, área, grupo, persona
+  y acción, y descarga en Excel con los mismos filtros.
+- Cada descarga en Excel queda en la bitácora (quién y cuándo).
+- **Imprimir expediente**: portada con los datos del huésped y su bitácora, y una hoja por documento en el orden del
+  archivo físico (versión vigente de cada uno).
+
+Pendiente: aviso de privacidad, respaldo nocturno y contraseñas definitivas antes de usar datos reales.
 
 ## Cómo está hecho
 

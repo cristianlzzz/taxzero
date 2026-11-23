@@ -87,15 +87,23 @@ export async function salir() {
 }
 
 // ------------------------------------------------------------------ marco
+function secciones(rol) {
+  const s = [['/', 'Grupos'], ['/avance', 'Avance']];
+  if (rol === 'admin' || rol === 'impuestos') s.push(['/bitacora', 'Bitácora']);
+  if (rol === 'admin') s.push(['/usuarios', 'Usuarios']);
+  return s;
+}
+function seccionActual() {
+  const h = location.hash.replace(/^#/, '');
+  return ['/avance', '/bitacora', '/usuarios'].find((x) => h.startsWith(x)) || '/';
+}
 export function header() {
   const p = state.perfil;
   const r = ROLES[p.rol];
   const ini = p.nombre.split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase();
   return `<header class="top"><div class="wrap top-in">
     <a class="brand" href="#/">${ICONO}Taxzero<small>Expedientes tax free</small></a>
-    <nav class="roles" aria-label="Secciones">${p.rol === 'admin'
-      ? `<a class="tab" href="#/" aria-selected="${!location.hash.startsWith('#/usuarios')}">Grupos</a><a class="tab" href="#/usuarios" aria-selected="${location.hash.startsWith('#/usuarios')}">Usuarios</a>`
-      : `<span class="tab" aria-selected="true">${esc(r.label)}</span>`}</nav>
+    <nav class="roles" aria-label="Secciones">${secciones(p.rol).map(([h, t]) => `<a class="tab" href="#${h}" aria-selected="${seccionActual() === h}">${t}</a>`).join('')}</nav>
     <div class="who"><span class="avatar">${esc(ini)}</span><span>${esc(p.nombre)}<br><small>${esc(r.label)} · ${r.where} · <button class="linkbtn" data-a="miclave">Cambiar contraseña</button> · <button class="linkbtn" data-a="salir">Cerrar sesión</button></small></span></div>
   </div></header>`;
 }

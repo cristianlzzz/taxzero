@@ -2,6 +2,7 @@
 // Uso: BASE=http://127.0.0.1:8787 node tests/e2e.mjs  (requiere las claves de prueba en env)
 import { createRequire } from 'node:module';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 
 // Playwright viene instalado en el equipo de pruebas, no como dependencia del proyecto.
 const { chromium, devices } = createRequire(import.meta.url)('playwright');
@@ -430,6 +431,89 @@ const marcarTodo = async (page) => {
   await page.waitForSelector('text=Expedientes por');
   const r = await page.evaluate(async () => (await fetch('/api/grupos', { method: 'POST', headers: { 'x-taxzero': '1', 'content-type': 'application/json' }, body: '{"nombre":"x","empresa":"y","llegada":"2026-01-01","salida":"2026-01-02"}' })).status);
   ok(r === 403, `Crédito no puede crear grupos (${r})`);
+  await ctx.close();
+}
+
+// ---------------------------------------------------------------- 7. Reportes, bitácora general e impresión
+const leerExcel = (f) => execFileSync('python3', ['-I', '-c',
+  'import sys,openpyxl\nws=openpyxl.load_workbook(sys.argv[1]).active\nprint("\\n".join("|".join("" if c is None else str(c) for c in r) for r in ws.iter_rows(values_only=True)))', f]).toString();
+{
+  const { ctx, page } = await sesion('impuestos');
+  await page.waitForSelector('text=Expedientes por');
+  await page.click('a.tab:has-text("Avance")');
+  await page.waitForSelector('h1:has-text("Avance por")');
+  const fila = page.locator('table.avance tbody tr', { hasText: nombreGrupo });
+  ok(await fila.count() === 1, 'El avance muestra el grupo de prueba');
+  ok(/^3\b/.test(await fila.locator('td').nth(1).innerText()), 'Cuenta los huéspedes del grupo');
+  await page.screenshot({ path: `${OUT}/19-avance.png`, fullPage: true });
+
+  // Excel de la lista de huéspedes.
+  await fila.locator('a').first().click();
+  await page.waitForSelector(`h1:has-text("${nombreGrupo}")`);
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('a:has-text("Descargar en Excel")')]);
+  const fx = `${OUT}/lista.xlsx`;
+  await dl.saveAs(fx);
+  ok(/^Huespedes Convencion de prueba \d+ \d{4}-\d{2}-\d{2}\.xlsx$/.test(dl.suggestedFilename()), `Nombre del archivo: ${dl.suggestedFilename()}`);
+  const txt = leerExcel(fx);
+  ok(txt.includes(nombreGrupo) && txt.includes('Carter|Emily'), 'El Excel trae el grupo y al huésped');
+  ok(txt.includes('FMK-A 20931') && txt.includes('USD 18,600.00'), 'El Excel trae el folio de factura y el monto registrado por Crédito');
+  await page.reload();
+  await page.waitForSelector('text=Descargó en Excel la lista de huéspedes del grupo');
+  ok(true, 'La descarga queda en la bitácora del grupo');
+
+  // Imprimir expediente.
+  await page.click('tr:has-text("Carter") >> text=Abrir');
+  await page.waitForSelector('h1:has-text("Emily Carter")');
+  await page.click('a:has-text("Imprimir expediente")');
+  await page.waitForSelector('.portada');
+  await page.waitForFunction(() => [...document.querySelectorAll('.hoja img')].every((i) => i.complete && i.naturalWidth > 0));
+  const titulos = await page.locator('.hoja-t b').allInnerTexts();
+  ok(titulos.join(',').startsWith('Registration card,Pasaporte,Forma migratoria'), `Hojas en el orden del archivo físico (${titulos.join(', ')})`);
+  await page.emulateMedia({ media: 'print' });
+  ok(!(await page.isVisible('header.top')), 'Al imprimir no sale el menú de la página');
+  await page.pdf({ path: `${OUT}/20-expediente-impreso.pdf`, format: 'Letter' });
+  await page.emulateMedia({ media: 'screen' });
+
+  // Bitácora general con filtros y Excel.
+  await page.click('a.tab:has-text("Bitácora")');
+  await page.waitForSelector('h1:has-text("Bitácora")');
+  const gid = await page.locator('#bf-grupo option', { hasText: nombreGrupo }).getAttribute('value');
+  await page.selectOption('#bf-grupo', gid);
+  await page.fill('#bf-texto', 'cerrado');
+  await page.click('form[data-form=bitacora] button[type=submit]');
+  await page.waitForSelector('button:has-text("Quitar filtros")');
+  const lineas = await page.locator('.log li').allInnerTexts();
+  ok(lineas.length > 0 && lineas.every((l) => /cerr/i.test(l.split('\n')[0]) && l.includes(nombreGrupo)), `Filtra por grupo y acción (${lineas.length} movimientos)`);
+  await page.selectOption('#bf-area', 'Crédito');
+  await page.fill('#bf-texto', '');
+  await page.click('form[data-form=bitacora] button[type=submit]');
+  await page.waitForFunction(() => document.querySelector('a[data-descarga]').href.includes('area=') && document.querySelectorAll('.log li').length > 0);
+  const deCredito = await page.locator('.log li .t:first-of-type').allInnerTexts();
+  ok(deCredito.every((t) => t.includes('(Crédito)')), 'Filtra por área');
+  const [dl2] = await Promise.all([page.waitForEvent('download'), page.click('a:has-text("Descargar en Excel")')]);
+  const fb = `${OUT}/bitacora.xlsx`;
+  await dl2.saveAs(fb);
+  const tb = leerExcel(fb);
+  ok(tb.includes('Bitácora general de Taxzero') && tb.includes('área Crédito') && tb.includes('|Crédito|'), 'El Excel de la bitácora respeta los filtros');
+  await page.click('button:has-text("Quitar filtros")');
+  await page.waitForSelector('text=Descargó en Excel la bitácora general');
+  ok(true, 'La descarga de la bitácora queda registrada');
+  await page.screenshot({ path: `${OUT}/21-bitacora-general.png`, fullPage: true });
+  await ctx.close();
+}
+{
+  const { ctx, page } = await sesion('frontdesk');
+  await page.waitForSelector('a.tab:has-text("Avance")');
+  ok(!(await page.isVisible('a.tab:has-text("Bitácora")')), 'Front Desk no ve la bitácora general');
+  const r = await page.evaluate(async () => [(await fetch('/api/bitacora')).status, (await fetch('/api/bitacora/excel')).status]);
+  ok(r[0] === 403 && r[1] === 403, `Front Desk no puede consultar la bitácora general (${r})`);
+  await ctx.close();
+}
+{
+  const { ctx, page } = await sesion('credito');
+  await page.waitForSelector('text=Expedientes por');
+  const r = await page.evaluate(async () => (await fetch('/api/bitacora')).status);
+  ok(r === 403, `Crédito no puede consultar la bitácora general (${r})`);
   await ctx.close();
 }
 

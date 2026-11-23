@@ -3,6 +3,7 @@ import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import {
   Db, Env, ErrorApi, Tokens, cerrarCapturasVencidas, cerrarSesion, iniciarSesion, renovarSesion,
 } from './supabase';
+import { libro } from './xlsx';
 
 type Rol = 'admin' | 'grupos' | 'frontdesk' | 'ipad' | 'credito' | 'impuestos';
 interface Perfil { id: string; nombre: string; rol: Rol }
@@ -274,7 +275,7 @@ app.get('/api/grupos/:id', async (c) => {
   const [grupo] = await db.select(`grupos?id=eq.${id}&select=*`);
   if (!grupo) throw new ErrorApi(404, 'El grupo no existe.');
   const expedientes = await db.select(
-    `expedientes?grupo_id=eq.${id}&select=id,folio,nombre,apellidos,nacionalidad,nacionalidad_codigo,pasaporte,estado,recapturar,actualizado_en&order=actualizado_en.desc`,
+    `expedientes?grupo_id=eq.${id}&select=id,folio,nombre,apellidos,nacionalidad,nacionalidad_codigo,pasaporte,pasaporte_vence,estado,recapturar,actualizado_en&order=actualizado_en.desc`,
   );
   let codigos: any[] = [];
   if (c.get('perfil').rol === 'frontdesk' || c.get('perfil').rol === 'admin') {
@@ -532,6 +533,149 @@ app.post('/api/mi-clave', async (c) => {
   const b = await c.req.json().catch(() => ({}));
   await c.get('db').rpc('cambiar_mi_clave', { p_actual: clave(b.actual), p_nueva: clave(b.nueva) });
   return c.json({ ok: true });
+});
+
+// ------------------------------------------------------------------ reportes (etapa 5)
+const ETIQUETA_ESTADO: Record<string, string> = {
+  pendiente: 'Pendiente de captura', incompleta: 'Captura incompleta', rev_grupos: 'En revisión de Grupos',
+  val_credito: 'En validación de Crédito', rev_impuestos: 'En revisión de Impuestos', cerrado: 'Cerrado',
+  dev_grupos: 'Devuelto a Grupos', dev_credito: 'Devuelto a Crédito', no_aplica: 'No aplica',
+};
+const ETIQUETA_DOC: Record<string, string> = {
+  pasaporte: 'Pasaporte', regcard: 'Registration card', pago: 'Comprobante de pago', fmm: 'Forma migratoria', constancia: 'Gafete o constancia',
+};
+const AREAS = ['Administración', 'Grupos', 'Front Desk', 'iPad', 'Crédito', 'Impuestos'];
+const ZONA = 'America/Cancun';
+
+function horaLocal(ts: string | null): string {
+  if (!ts) return '';
+  return new Date(ts).toLocaleString('es-MX', {
+    timeZone: ZONA, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+}
+function hoyLocal(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: ZONA });
+}
+function archivoExcel(datos: Uint8Array, nombre: string): Response {
+  return new Response(datos, {
+    headers: {
+      'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      // Nombre sin acentos: algunos navegadores ignoran nombres con caracteres especiales.
+      'content-disposition': `attachment; filename="${nombre.normalize('NFD').replace(/[^\x20-\x7e]/g, '').replace(/"/g, '')}"`,
+      'cache-control': 'no-store',
+    },
+  });
+}
+const nombreArchivo = (s: string) => s.replace(/[^\p{L}\p{N} _-]+/gu, '').trim().slice(0, 60) || 'grupo';
+
+app.get('/api/grupos/:id/excel', async (c) => {
+  exigir(c, 'admin', 'grupos', 'credito', 'impuestos');
+  const id = uuid(c.req.param('id'));
+  const db = c.get('db');
+  const [grupo] = await db.select(`grupos?id=eq.${id}&select=*`);
+  if (!grupo) throw new ErrorApi(404, 'El grupo no existe.');
+  const [expedientes, facturas, montos, evento] = await Promise.all([
+    db.select(`expedientes?grupo_id=eq.${id}&select=folio,nombre,apellidos,nacionalidad,pasaporte,pasaporte_vence,estado,recapturar,actualizado_en&order=apellidos.asc,nombre.asc`),
+    db.select(`facturas_grupo?grupo_id=eq.${id}&select=folio,tipo&order=ts.asc,id.asc`),
+    db.select(`montos_grupo?grupo_id=eq.${id}&select=valor&order=ts.desc,id.desc&limit=1`),
+    db.select(`evento_grupo?grupo_id=eq.${id}&select=tipo,organizador,pais&order=ts.desc,id.desc&limit=1`),
+  ]);
+  await db.rpc('anotar_descarga', { p_grupo: id, p_que: 'lista' });
+  const ultimaFactura = (t: string) => facturas.filter((f: any) => f.tipo === t).map((f: any) => f.folio).pop() || '';
+  const ev = evento[0];
+  const filas: (string | number | null)[][] = [
+    ['Grupo', grupo.nombre],
+    ['Empresa', grupo.empresa],
+    ['Código de grupo en Opera', grupo.codigo_opera || ''],
+    ['Llegada y salida oficiales', `${grupo.llegada} al ${grupo.salida}`],
+    ['Organizador del evento', ev ? `${ev.organizador}${ev.pais ? ` (${ev.pais})` : ''}` : ''],
+    ['Factura del evento', ultimaFactura('evento')],
+    ['Factura de días personales', ultimaFactura('personal')],
+    ['Monto de devolución registrado por Crédito', montos[0]?.valor || ''],
+    ['Descargado', `${horaLocal(new Date().toISOString())} por ${c.get('perfil').nombre}`],
+    [],
+    ['Folio', 'Apellidos', 'Nombre', 'Nacionalidad', 'Pasaporte', 'Vence pasaporte', 'Estado', 'Por recapturar', 'Último movimiento'],
+    ...expedientes.map((e: any) => [
+      `EXP-${e.folio}`, e.apellidos, e.nombre, e.nacionalidad, e.pasaporte || '', e.pasaporte_vence || '',
+      ETIQUETA_ESTADO[e.estado] || e.estado, (e.recapturar || []).map((d: string) => ETIQUETA_DOC[d] || d).join(', '),
+      horaLocal(e.actualizado_en),
+    ]),
+  ];
+  const datos = libro({
+    nombre: 'Huéspedes', filas, negritas: [0, 10], anchos: [12, 24, 20, 18, 14, 14, 26, 24, 18],
+  });
+  return archivoExcel(datos, `Huéspedes ${nombreArchivo(grupo.nombre)} ${hoyLocal()}.xlsx`);
+});
+
+// Filtros de la bitácora general. Las fechas son días en hora de Cancún (UTC-5, sin horario de verano).
+function filtrosBitacora(q: Record<string, string>): string {
+  const f: string[] = [];
+  const dia = (v: string | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '');
+  const desde = dia(q.desde);
+  const hasta = dia(q.hasta);
+  if (desde) f.push(`ts=gte.${encodeURIComponent(`${desde}T00:00:00-05:00`)}`);
+  if (hasta) {
+    const sig = new Date(`${hasta}T00:00:00Z`);
+    sig.setUTCDate(sig.getUTCDate() + 1);
+    f.push(`ts=lt.${encodeURIComponent(`${sig.toISOString().slice(0, 10)}T00:00:00-05:00`)}`);
+  }
+  if (q.area && AREAS.includes(q.area)) f.push(`rol=eq.${encodeURIComponent(q.area)}`);
+  if (q.grupo && UUID.test(q.grupo)) f.push(`grupo_id=eq.${q.grupo}`);
+  const persona = (q.persona || '').replace(/[*,()%\\]/g, ' ').trim().slice(0, 60);
+  if (persona) f.push(`usuario_nombre=ilike.${encodeURIComponent(`*${persona}*`)}`);
+  const texto = (q.texto || '').replace(/[*,()%\\]/g, ' ').trim().slice(0, 60);
+  if (texto) f.push(`accion=ilike.${encodeURIComponent(`*${texto}*`)}`);
+  return f.length ? `&${f.join('&')}` : '';
+}
+const SELECT_BITACORA = 'select=id,ts,usuario_nombre,rol,accion,motivo,grupo_id,expediente_id,grupos(folio,nombre),expedientes(folio,nombre,apellidos)';
+const POR_PAGINA = 100;
+
+app.get('/api/bitacora', async (c) => {
+  exigir(c, 'admin', 'impuestos');
+  const q = c.req.query();
+  const pagina = Math.max(0, Math.min(1000, Number.parseInt(q.pagina || '0', 10) || 0));
+  const filas = await c.get('db').select(
+    `bitacora?${SELECT_BITACORA}${filtrosBitacora(q)}&order=ts.desc,id.desc&limit=${POR_PAGINA + 1}&offset=${pagina * POR_PAGINA}`,
+  );
+  return c.json({ filas: filas.slice(0, POR_PAGINA), hay_mas: filas.length > POR_PAGINA, pagina });
+});
+
+const MAX_EXCEL_BITACORA = 10000;
+app.get('/api/bitacora/excel', async (c) => {
+  exigir(c, 'admin', 'impuestos');
+  const q = c.req.query();
+  const db = c.get('db');
+  const filtros = filtrosBitacora(q);
+  let filas: any[] = [];
+  // Supabase entrega máximo 1,000 filas por consulta: se piden por bloques.
+  for (let off = 0; off < MAX_EXCEL_BITACORA; off += 1000) {
+    const lote = await db.select(`bitacora?${SELECT_BITACORA}${filtros}&order=ts.desc,id.desc&limit=1000&offset=${off}`);
+    filas = filas.concat(lote);
+    if (lote.length < 1000) break;
+  }
+  await db.rpc('anotar_descarga', { p_grupo: null, p_que: 'bitacora' });
+  const aplicados = [
+    q.desde && `desde ${q.desde}`, q.hasta && `hasta ${q.hasta}`, q.area && `área ${q.area}`,
+    q.persona && `persona "${q.persona}"`, q.texto && `acción con "${q.texto}"`,
+    q.grupo && filas[0]?.grupos && `grupo ${filas[0].grupos.nombre}`,
+  ].filter(Boolean).join(', ');
+  const datos = libro({
+    nombre: 'Bitácora',
+    negritas: [0, 3],
+    anchos: [17, 24, 16, 52, 34, 30, 28],
+    filas: [
+      ['Bitácora general de Taxzero'],
+      [`Descargada ${horaLocal(new Date().toISOString())} por ${c.get('perfil').nombre}. Filtros: ${aplicados || 'ninguno'}.${filas.length >= MAX_EXCEL_BITACORA ? ` Solo los ${MAX_EXCEL_BITACORA} movimientos más recientes.` : ''}`],
+      [],
+      ['Fecha y hora', 'Persona', 'Área', 'Acción', 'Motivo', 'Grupo', 'Expediente'],
+      ...filas.map((b: any) => [
+        horaLocal(b.ts), b.usuario_nombre, b.rol, b.accion, b.motivo || '',
+        b.grupos ? `GRP-${b.grupos.folio} ${b.grupos.nombre}` : '',
+        b.expedientes ? `EXP-${b.expedientes.folio} ${b.expedientes.apellidos}, ${b.expedientes.nombre}` : '',
+      ]),
+    ],
+  });
+  return archivoExcel(datos, `Bitácora Taxzero ${hoyLocal()}.xlsx`);
 });
 
 app.all('/api/*', (c) => c.json({ error: 'No encontrado.' }, 404));
