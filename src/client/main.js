@@ -1,5 +1,6 @@
 import { ROLES } from './catalogos.js';
 import { api, esc } from './util.js';
+import { AVISO_BORRADOR, AVISO_INTEGRAL, AVISO_PERSONAL, AVISO_VERSION, RUTA_AVISO, avisoHTML } from './aviso.js';
 import * as pc from './pc.js';
 import * as ipad from './ipad.js';
 
@@ -44,6 +45,7 @@ function loginHTML(error) {
     <div class="field"><label for="l-clave">Contraseña</label><input type="password" id="l-clave" autocomplete="current-password" required></div>
     <p class="err" id="l-err" ${error ? '' : 'hidden'}>${esc(error || '')}</p>
     <button type="submit" class="btn primary block">Entrar</button>
+    <p class="muted center small"><a href="${RUTA_AVISO}">Aviso de privacidad</a></p>
   </form></main>`;
 }
 
@@ -86,6 +88,55 @@ export async function salir() {
   mostrarLogin();
 }
 
+// ------------------------------------------------------------------ aviso de privacidad
+const borradorHTML = () =>
+  AVISO_BORRADOR ? '<p class="notice"><b>Borrador pendiente de validación del área legal.</b> Lo resaltado falta confirmarlo.</p>' : '';
+
+export function avisoIntegralHTML() {
+  return ['es', 'en'].map((l) => {
+    const A = AVISO_INTEGRAL[l];
+    return `<section class="aviso" lang="${l}"><h2>${esc(A.titulo)}</h2>${A.secciones.map(([t, p]) => `<h3>${esc(t)}</h3><p>${avisoHTML(p, esc)}</p>`).join('')}</section>`;
+  }).join('');
+}
+
+// Página pública del aviso (no requiere sesión). El huésped la puede abrir en su teléfono.
+function mostrarAvisoPublico() {
+  document.body.classList.remove('ipad-mode');
+  root.innerHTML = `<main class="wrap aviso-pag"><div class="card flat stack">
+    <div class="brand">${ICONO}Taxzero<small>Fairmont Mayakoba</small></div>
+    ${borradorHTML()}${avisoIntegralHTML()}
+    <p class="muted small">Versión ${esc(AVISO_VERSION)}</p>
+    <p><a href="#/">${state.perfil ? 'Volver a Taxzero' : 'Ir al inicio de sesión'}</a></p>
+  </div></main>`;
+}
+
+function mostrarAvisoPersonal(error) {
+  document.body.classList.remove('ipad-mode');
+  root.innerHTML = `<main class="login"><form class="card aviso-card" data-form="aviso" novalidate>
+    <div class="brand">${ICONO}Taxzero<small>Expedientes tax free</small></div>
+    <div><h1>${esc(AVISO_PERSONAL.titulo)}</h1><p class="muted mt-8">Hola, ${esc(state.perfil.nombre)}. Antes de entrar, lee y acepta lo siguiente. Solo se pide una vez, o cuando el aviso cambie.</p></div>
+    ${borradorHTML()}
+    <ul class="aviso-lista">${AVISO_PERSONAL.puntos.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+    <p class="small"><a href="${RUTA_AVISO}" target="_blank" rel="noopener">Leer el aviso de privacidad para huéspedes</a></p>
+    <label class="check-inline"><input type="checkbox" id="av-ok"> He leído el aviso y me comprometo a cumplirlo.</label>
+    <p class="err" id="av-err" ${error ? '' : 'hidden'}>${esc(error || '')}</p>
+    <div class="row space-between"><button type="button" class="btn" data-a="salir">Cerrar sesión</button><button type="submit" class="btn primary" id="av-btn" disabled>Aceptar y entrar</button></div>
+  </form></main>`;
+}
+
+async function aceptarAviso(form) {
+  const btn = form.querySelector('#av-btn');
+  btn.disabled = true;
+  btn.textContent = 'Guardando…';
+  try {
+    const { perfil } = await api('POST', '/api/aviso', { version: AVISO_VERSION });
+    state.perfil = perfil;
+    render();
+  } catch (e) {
+    mostrarAvisoPersonal(e.message);
+  }
+}
+
 // ------------------------------------------------------------------ marco
 function secciones(rol) {
   const s = [['/', 'Grupos'], ['/avance', 'Avance']];
@@ -109,7 +160,12 @@ export function header() {
 }
 
 export function render() {
+  if (location.hash === RUTA_AVISO) return mostrarAvisoPublico();
   if (!state.perfil) return mostrarLogin();
+  if (state.perfil.aviso_version !== AVISO_VERSION) {
+    ipad.detener();
+    return mostrarAvisoPersonal();
+  }
   if (state.perfil.rol === 'ipad') {
     document.body.classList.add('ipad-mode');
     return ipad.montar(root);
@@ -125,6 +181,14 @@ document.addEventListener('submit', (ev) => {
     ev.preventDefault();
     entrar(f);
   }
+  const a = ev.target.closest('[data-form="aviso"]');
+  if (a) {
+    ev.preventDefault();
+    if (a.querySelector('#av-ok').checked) aceptarAviso(a);
+  }
+});
+document.addEventListener('change', (ev) => {
+  if (ev.target.id === 'av-ok') document.getElementById('av-btn').disabled = !ev.target.checked;
 });
 document.addEventListener('click', (ev) => {
   const el = ev.target.closest('[data-a="salir"]');
@@ -133,18 +197,32 @@ document.addEventListener('click', (ev) => {
 window.addEventListener('tz:sesion-terminada', () => {
   if (state.perfil) mostrarLogin('Tu sesión terminó. Vuelve a iniciar sesión.');
 });
+window.addEventListener('tz:aviso-pendiente', () => {
+  if (state.perfil) {
+    state.perfil.aviso_version = null;
+    render();
+  }
+});
+let enAviso = location.hash === RUTA_AVISO;
 window.addEventListener('hashchange', () => {
-  if (state.perfil && state.perfil.rol !== 'ipad') pc.montar(root);
+  const aviso = location.hash === RUTA_AVISO;
+  if (aviso || enAviso || !state.perfil || state.perfil.aviso_version !== AVISO_VERSION) {
+    enAviso = aviso;
+    return render();
+  }
+  if (state.perfil.rol !== 'ipad') pc.montar(root);
 });
 
 // ------------------------------------------------------------------ arranque
 (async () => {
-  root.innerHTML = '<div class="loading"><span class="spinner"></span>Cargando…</div>';
+  if (location.hash === RUTA_AVISO) mostrarAvisoPublico();
+  else root.innerHTML = '<div class="loading"><span class="spinner"></span>Cargando…</div>';
   try {
     const { perfil } = await api('GET', '/api/sesion', undefined, { onUnauthorized: false });
     state.perfil = perfil;
     render();
   } catch {
-    mostrarLogin();
+    if (location.hash === RUTA_AVISO) mostrarAvisoPublico();
+    else mostrarLogin();
   }
 })();

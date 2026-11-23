@@ -123,3 +123,14 @@ O conecta este repositorio en Cloudflare (Workers → Create → Import a reposi
 - Cambiar las contraseñas de prueba o borrar esos usuarios del proyecto de pruebas.
 - Considerar R2 para las fotos: un grupo de 500 huéspedes son ~2,000 fotos (~0.6 GB); el plan gratuito de Supabase
   Storage tiene 1 GB y R2 10 GB.
+
+## Aviso de privacidad (borrador pendiente de validación legal)
+
+- **Personal:** al entrar por primera vez, cada usuario lee y acepta el aviso de privacidad y el compromiso de
+  confidencialidad. Sin aceptarlo no puede ver ni cambiar nada. La aceptación queda en la bitácora de usuarios.
+- **Huésped (iPad):** después de escanear el QR, el iPad muestra el aviso en español e inglés, con un QR para leer el
+  aviso completo en su teléfono. Sin *Acepto* no se puede tomar ni guardar ninguna foto. Si el huésped no acepta,
+  queda anotado en su expediente y la captura se cierra sin fotos.
+- **Aviso completo:** en `/#/aviso-de-privacidad`, sin necesidad de sesión.
+- El texto está en `src/client/aviso.js`; lo resaltado falta confirmarlo con Legal. Al cambiar el texto se sube la
+  versión (también en `src/worker/index.ts`) y todos vuelven a aceptarlo.

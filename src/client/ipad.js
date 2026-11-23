@@ -4,6 +4,8 @@ import { DOCS, FMM_TIPOS } from './catalogos.js';
 import { api, esc, mmss } from './util.js';
 import { NITIDEZ_MIN, procesarFoto } from './imagen.js';
 import { state } from './main.js';
+import qrcode from 'qrcode-generator';
+import { AVISO_BORRADOR, AVISO_HUESPED, AVISO_VERSION, RUTA_AVISO, avisoHTML } from './aviso.js';
 
 let root;
 let fd = { step: 'scan' };
@@ -15,6 +17,7 @@ const ERRORES = {
   CODIGO_USADO: ['Este código ya se usó', 'Cada código sirve una sola vez. Pide a Front Desk que genere uno nuevo.'],
   CODIGO_VENCIDO: ['Este código venció', 'Los códigos duran 15 minutos. Pide a Front Desk que genere uno nuevo.'],
   CODIGO_SIN_CAPTURA: ['Este expediente ya no está en captura', 'Sus documentos ya se enviaron. Si falta algo, Grupos pedirá una recaptura.'],
+  AVISO_PENDIENTE: ['Falta el aviso de privacidad', 'El huésped debe aceptar el aviso antes de las fotos. Escanea el código de nuevo.'],
   CAPTURA_CERRADA: ['La captura ya se cerró', 'El código venció y lo capturado se guardó. Pide a Front Desk un código nuevo para completar.'],
 };
 
@@ -39,7 +42,7 @@ function pintar() {
   </div>`;
   if (fd.step === 'scan') iniciarCamara();
   else pararCamara();
-  if (['capture', 'summary'].includes(fd.step)) iniciarReloj();
+  if (['aviso', 'capture', 'summary'].includes(fd.step)) iniciarReloj();
 }
 
 // ------------------------------------------------------------------ pantallas
@@ -60,6 +63,7 @@ function cuerpo() {
       <div class="big-ok warn-ic"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v5M12 16.5v.5"/><circle cx="12" cy="12" r="9"/></svg></div>
       <h1>${esc(fd.errT)}</h1><p class="muted">${esc(fd.errM)}</p><div><button class="btn lg" data-a="fdreset">Escanear otro código</button></div></div>`;
   }
+  if (fd.step === 'aviso') return pantallaAviso();
   if (fd.step === 'capture') return pantallaCaptura();
   if (fd.step === 'summary') return pantallaResumen();
   if (fd.step === 'done') {
@@ -68,6 +72,62 @@ function cuerpo() {
       <h1>${esc(fd.doneT)}</h1><p class="muted">${esc(fd.doneM)}</p><div><button class="btn primary lg" data-a="fdreset">Escanear al siguiente huésped</button></div></div>`;
   }
   return '';
+}
+
+// El huésped lee y acepta el aviso de privacidad antes de cualquier foto.
+function qrAviso() {
+  const q = qrcode(0, 'M');
+  q.addData(`${location.origin}/${RUTA_AVISO}`);
+  q.make();
+  return q.createSvgTag({ cellSize: 4, margin: 1, scalable: true, alt: 'QR del aviso de privacidad completo' });
+}
+
+function pantallaAviso() {
+  const c = fd.c;
+  const bloque = (l) => `<div class="card flat" lang="${l}"><h2>${esc(AVISO_HUESPED[l].titulo)}</h2><p>${avisoHTML(AVISO_HUESPED[l].texto, esc)}</p></div>`;
+  return `<div class="fd-top"><div><p class="eyebrow">${esc(c.grupo)}</p><h1>${esc(c.nombre)} ${esc(c.apellidos)}</h1></div>${timerHTML()}</div>
+    <div class="aviso-huesped" id="aviso-huesped">
+      <p class="muted">Muestre esta pantalla al huésped. / Please read before we continue.</p>
+      ${AVISO_BORRADOR ? '<p class="notice"><b>Borrador pendiente de validación del área legal.</b></p>' : ''}
+      ${bloque('es')}${bloque('en')}
+      <div class="qr-aviso">${qrAviso()}<p class="muted small">Aviso de privacidad completo: escanee con su teléfono.<br>Full privacy notice: scan with your phone.</p></div>
+      ${fd.errAviso ? `<div class="notice">${esc(fd.errAviso)}</div>` : ''}
+      <div class="fd-actions">
+        <button class="btn lg" data-a="aviso-no" ${fd.guardandoAviso ? 'disabled' : ''}>No acepto / I do not accept</button>
+        <button class="btn primary lg" data-a="aviso-si" ${fd.guardandoAviso ? 'disabled' : ''}>${fd.guardandoAviso ? 'Guardando…' : 'Acepto / I accept'}</button>
+      </div>
+    </div>`;
+}
+
+async function respuestaAviso(acepta) {
+  if (fd.guardandoAviso) return;
+  fd.guardandoAviso = true;
+  fd.errAviso = null;
+  pintar();
+  try {
+    await api('POST', `/api/captura/${fd.c.codigo}/aviso`, { acepta, version: AVISO_VERSION });
+    fd.guardandoAviso = false;
+    if (acepta) {
+      fd.step = 'capture';
+      pintar();
+      return;
+    }
+    const nombre = `${fd.c.nombre} ${fd.c.apellidos}`;
+    await api('POST', `/api/captura/${fd.c.codigo}/finalizar`).catch(() => undefined);
+    liberarTodo();
+    fd = {
+      step: 'done',
+      doneT: 'El huésped no aceptó el aviso de privacidad',
+      doneM: `No se tomó ninguna foto de ${nombre}. Quedó anotado en su expediente. Si cambia de opinión, Front Desk puede generar otro QR.`,
+    };
+    pintar();
+  } catch (e) {
+    fd.guardandoAviso = false;
+    if (e.status === 401) return;
+    if (ERRORES[e.message]) return terminarPorVencimiento();
+    fd.errAviso = `No se guardó la respuesta: ${e.message}`;
+    pintar();
+  }
 }
 
 function timerHTML() {
@@ -192,7 +252,7 @@ async function abrirCaptura(codigo) {
     // Los pasos opcionales (gafete o constancia) van al final y no cuentan como faltantes.
     const opcionales = (captura.opcionales || []).filter((t) => DOCS[t]);
     fd = {
-      step: 'capture', c: { ...captura, pasos: [...captura.pasos, ...opcionales], opcionales }, idx: 0, shots: {}, skipped: {}, cur: null, fmmTipo: 'fmm',
+      step: 'aviso', c: { ...captura, pasos: [...captura.pasos, ...opcionales], opcionales }, idx: 0, shots: {}, skipped: {}, cur: null, fmmTipo: 'fmm',
     };
   } catch (e) {
     if (e.status === 401) return;
@@ -299,7 +359,7 @@ function terminarPorVencimiento() {
 function iniciarReloj() {
   if (reloj) return;
   reloj = setInterval(() => {
-    if (!['capture', 'summary'].includes(fd.step)) {
+    if (!['aviso', 'capture', 'summary'].includes(fd.step)) {
       clearInterval(reloj);
       reloj = null;
       return;
@@ -351,6 +411,12 @@ document.addEventListener('click', (ev) => {
     }
     case 'usar':
       usarFoto();
+      break;
+    case 'aviso-si':
+      respuestaAviso(true);
+      break;
+    case 'aviso-no':
+      respuestaAviso(false);
       break;
     case 'redo':
       fd.idx = +d.i;
