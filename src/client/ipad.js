@@ -92,7 +92,7 @@ function pantallaCaptura() {
         <label class="btn primary lg" for="foto">Tomar foto</label>
         <input id="foto" class="file-hidden" type="file" accept="image/*" capture="environment"></div>
       ${fd.errFoto ? `<div class="notice">${esc(fd.errFoto)}</div>` : ''}
-      <div class="fd-actions"><button class="btn sm" data-a="skip">El huésped no lo trae</button><span></span></div>`;
+      <div class="fd-actions"><button class="btn sm" data-a="skip">${esOpcional(t) ? 'Aún no lo tiene' : 'El huésped no lo trae'}</button><span></span></div>`;
   } else {
     const borrosa = fd.cur.nitidez < NITIDEZ_MIN;
     const subiendo = fd.subiendo;
@@ -108,14 +108,16 @@ function pantallaCaptura() {
       </div>`;
   }
   return `<div class="fd-top"><div><p class="eyebrow">${esc(c.grupo)}</p><h1>${esc(c.nombre)} ${esc(c.apellidos)}</h1></div>${timerHTML()}</div>
-    ${stepper}<h2>Paso ${fd.idx + 1} de ${c.pasos.length}: ${D.label}</h2>${stage}`;
+    ${stepper}<h2>Paso ${fd.idx + 1} de ${c.pasos.length}: ${D.label}${esOpcional(t) ? ' <span class="muted">(opcional)</span>' : ''}</h2>${stage}`;
 }
+
+const esOpcional = (t) => (fd.c?.opcionales || []).includes(t);
 
 function pantallaResumen() {
   const c = fd.c;
-  const faltan = c.pasos.filter((s) => !fd.shots[s]);
+  const faltan = c.pasos.filter((s) => !fd.shots[s] && !esOpcional(s));
   return `<div class="fd-top"><div><p class="eyebrow">Revisión antes de enviar</p><h1>${esc(c.nombre)} ${esc(c.apellidos)}</h1></div>${timerHTML()}</div>
-    <div class="sumgrid">${c.pasos.map((s, i) => `<div class="sum">${fd.shots[s] ? `<img src="${fd.shots[s].url}" alt="${DOCS[s].label}">` : '<div class="missing">No lo trajo</div>'}<b>${DOCS[s].label}</b><button class="btn sm" data-a="redo" data-i="${i}" ${fd.enviando ? 'disabled' : ''}>${fd.shots[s] ? 'Repetir' : 'Tomar'}</button></div>`).join('')}</div>
+    <div class="sumgrid">${c.pasos.map((s, i) => `<div class="sum">${fd.shots[s] ? `<img src="${fd.shots[s].url}" alt="${DOCS[s].label}">` : `<div class="missing">${esOpcional(s) ? 'Opcional, sin foto' : 'No lo trajo'}</div>`}<b>${DOCS[s].label}</b><button class="btn sm" data-a="redo" data-i="${i}" ${fd.enviando ? 'disabled' : ''}>${fd.shots[s] ? 'Repetir' : 'Tomar'}</button></div>`).join('')}</div>
     ${faltan.length ? `<div class="notice">Faltan: ${faltan.map((s) => DOCS[s].label.toLowerCase()).join(', ')}. El expediente quedará como <b>Captura incompleta</b> y Front Desk tendrá que generar otro QR para completarlo.</div>` : ''}
     ${fd.errEnviar ? `<div class="notice">${esc(fd.errEnviar)}</div>` : ''}
     <div class="fd-actions"><span class="muted">Al enviar, la captura pasa a Grupos. Las fotos ya quedaron guardadas.</span>
@@ -187,8 +189,10 @@ async function abrirCaptura(codigo) {
   pintar();
   try {
     const { captura } = await api('POST', '/api/captura/iniciar', { codigo });
+    // Los pasos opcionales (gafete o constancia) van al final y no cuentan como faltantes.
+    const opcionales = (captura.opcionales || []).filter((t) => DOCS[t]);
     fd = {
-      step: 'capture', c: captura, idx: 0, shots: {}, skipped: {}, cur: null, fmmTipo: 'fmm',
+      step: 'capture', c: { ...captura, pasos: [...captura.pasos, ...opcionales], opcionales }, idx: 0, shots: {}, skipped: {}, cur: null, fmmTipo: 'fmm',
     };
   } catch (e) {
     if (e.status === 401) return;

@@ -1,6 +1,9 @@
 // Pantallas de escritorio (PC): Grupos, Front Desk, Crédito, Impuestos y Administración.
 import qrcode from 'qrcode-generator';
-import { CHECKS, DOCS, DOC_ORDER, ESTADOS, FILE_ORDER, FMM_TIPOS, MOTIVOS, PAISES, PAISES_FREC, QUEUE, QUEUE_WORD } from './catalogos.js';
+import {
+  CHECKS, CHECK_GRUPO, DOCS, DOCS_GRUPO, DOC_ORDER, ESTADOS, FILE_ORDER, FMM_TIPOS, MOTIVOS, PAISES, PAISES_FREC, QUEUE, QUEUE_WORD,
+  RIESGOS, TIPOS_EVENTO,
+} from './catalogos.js';
 import { api, dateTxt, esc, fmt, folioExp, folioGrupo, mmss } from './util.js';
 import { header, state, toast } from './main.js';
 
@@ -130,9 +133,29 @@ function altaGrupo() {
         <div class="field"><label for="a-est">Huéspedes estimados</label><input type="number" id="a-est" min="1" max="5000" placeholder="Ej. 450"></div>
         <div class="field"><label for="a-codigo">Código de grupo en Opera</label><input type="text" id="a-codigo" maxlength="60" placeholder="Ej. GRP-1401-WGB"></div>
       </div>
+      <div class="stack gap-sm"><h3>Evento y organizador</h3>
+        <p class="note">El estímulo solo aplica a congresos, convenciones, exposiciones o ferias con organizador residente en el extranjero. Los viajes de incentivo o recreativos no califican.</p></div>
+      ${camposEvento('a')}
       <p class="err" id="a-err" hidden></p>
       <div class="row end"><a class="btn" href="#/">Cancelar</a><button type="submit" class="btn primary">Crear grupo</button></div>
     </form>`;
+}
+
+function camposEvento(px, e = null) {
+  const paises = PAISES.map((p) => `<option value="${p[1]}" ${e?.pais_codigo === p[1] ? 'selected' : ''}>${esc(p[0])}</option>`).join('');
+  return `<div class="fgrid">
+    <div class="field"><label for="${px}-tipo">Tipo de evento</label><select id="${px}-tipo" required><option value="">Elige el tipo</option>${Object.entries(TIPOS_EVENTO).map(([k, l]) => `<option value="${k}" ${e?.tipo === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    <div class="field"><label for="${px}-org">Organizador del evento</label><input type="text" id="${px}-org" maxlength="200" required value="${esc(e?.organizador || '')}" placeholder="Empresa o asociación que organiza"></div>
+    <div class="field"><label for="${px}-pais">País de residencia del organizador</label><select id="${px}-pais"><option value="">Elige un país</option>${paises}</select>
+      <span class="note" id="${px}-pais-mx" ${e?.pais_codigo === 'MEX' ? '' : 'hidden'}>Con organizador residente en México el estímulo no aplica.</span></div>
+    <div class="field"><label for="${px}-idf">Identificación fiscal extranjera <span class="muted">(opcional)</span></label><input type="text" id="${px}-idf" maxlength="60" value="${esc(e?.id_fiscal || '')}" placeholder="Ej. EIN 12-3456789"></div>
+  </div>`;
+}
+
+function leerEvento(f, px) {
+  const v = (id) => f.querySelector(`#${px}-${id}`).value.trim();
+  const pais = PAISES.find((p) => p[1] === v('pais'));
+  return { tipo: v('tipo'), organizador: v('org'), pais_codigo: pais?.[1] || '', pais: pais?.[0] || '', id_fiscal: v('idf') };
 }
 
 async function enviarAlta(f) {
@@ -140,11 +163,12 @@ async function enviarAlta(f) {
   const err = f.querySelector('#a-err');
   const datos = {
     nombre: v('a-nombre'), empresa: v('a-empresa'), contacto: v('a-contacto'), llegada: v('a-llegada'),
-    salida: v('a-salida'), estimados: v('a-est'), codigo_opera: v('a-codigo'),
+    salida: v('a-salida'), estimados: v('a-est'), codigo_opera: v('a-codigo'), evento: leerEvento(f, 'a'),
   };
   let msg = '';
   if (!datos.nombre || !datos.empresa || !datos.llegada || !datos.salida) msg = 'Llena nombre, empresa, llegada y salida.';
   else if (datos.salida < datos.llegada) msg = 'La salida no puede ser antes de la llegada.';
+  else if (!datos.evento.tipo || datos.evento.organizador.length < 2) msg = 'Elige el tipo de evento y escribe el organizador.';
   if (msg) {
     err.hidden = false;
     err.textContent = msg;
@@ -164,7 +188,8 @@ async function enviarAlta(f) {
 }
 
 // ------------------------------------------------------------------ grupo
-function pantallaGrupo({ grupo: g, expedientes, codigos, montos = [], facturas = [] }) {
+function pantallaGrupo(datos) {
+  const { grupo: g, expedientes, codigos, montos = [], facturas = [] } = datos;
   const activos = new Map(codigos.map((c) => [c.expediente_id, c]));
   const clave = g.id;
   const f = ui.filtro[clave] || 'todos';
@@ -200,11 +225,79 @@ function pantallaGrupo({ grupo: g, expedientes, codigos, montos = [], facturas =
         <div><dt>Huéspedes dados de alta</dt><dd class="num">${expedientes.length}</dd></div>
         <div><dt>Contacto</dt><dd>${esc(g.contacto || 'Sin capturar')}</dd></div>
       </dl></div>
+      ${rol() === 'frontdesk' ? '' : expedienteEvento(datos)}
       ${extraGrupo(g, montos, facturas)}
+      ${rol() === 'impuestos' ? verificacionGrupo(datos) : ''}
       <div class="seg" role="tablist" aria-label="Filtrar por estado">${filtros.map(([k, l]) => `<button class="tab" role="tab" data-a="filtro" data-k="${k}" aria-selected="${f === k}">${l}</button>`).join('')}</div>
       <div class="tablewrap"><table><thead><tr><th>Huésped</th><th>Nacionalidad</th><th>Pasaporte</th><th>Estado</th><th>Último cambio</th><th></th></tr></thead>
       <tbody>${filas || `<tr><td colspan="6" class="empty">${expedientes.length ? 'Ningún expediente con este filtro.' : 'Aún no hay huéspedes en este grupo. Front Desk los da de alta desde su PC.'}</td></tr>`}</tbody></table></div>
+      ${datos.bitacora?.length ? `<div class="card flat stack"><div class="row space-between"><h3>Bitácora del grupo</h3><span class="note">No se puede editar ni borrar</span></div><ol class="log">${datos.bitacora.map(lineaLog).join('')}</ol></div>` : ''}
     </div>`;
+}
+
+const lineaLog = (l) => `<li><div>${esc(l.accion)}</div><div class="t">${fmt(l.ts)} · ${esc(l.usuario_nombre)} (${esc(l.rol)})</div>${l.motivo ? `<span class="m">Motivo: ${esc(l.motivo)}</span>` : ''}</li>`;
+
+const pesoTxt = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+
+// Expediente del evento: datos del organizador y documentos que respaldan el estímulo.
+function expedienteEvento({ evento = [], docs_grupo: docs = [] }) {
+  const e = evento[evento.length - 1];
+  const edita = ['grupos', 'admin'].includes(rol());
+  const datosEv = e
+    ? `<dl class="info">
+        <div><dt>Tipo de evento</dt><dd>${TIPOS_EVENTO[e.tipo]}</dd></div>
+        <div><dt>Organizador</dt><dd>${esc(e.organizador)}</dd></div>
+        <div><dt>Residencia del organizador</dt><dd>${esc(e.pais || 'Sin capturar')}</dd></div>
+        <div><dt>Identificación fiscal extranjera</dt><dd class="mono">${esc(e.id_fiscal || 'Sin capturar')}</dd></div>
+      </dl>
+      ${e.pais_codigo === 'MEX' ? '<div class="notice">El organizador es residente en México: el estímulo no aplica.</div>' : ''}
+      <p class="note">Registrado por ${esc(e.registrado_por_nombre)} el ${fmt(e.ts)}${evento.length > 1 ? '. Los datos anteriores quedan en la bitácora del grupo.' : '.'}</p>`
+    : '<div class="notice">Faltan los datos del evento y del organizador. Sin ellos no se puede demostrar que el evento califica.</div>';
+  const filas = DOCS_GRUPO.map(([t, label, ayuda]) => {
+    const arch = docs.filter((d) => d.tipo === t).reverse();
+    const lista = arch.length
+      ? `<ul class="files">${arch.map((d, i) => `<li><a href="/api/documentos-grupo/${d.id}/archivo" target="_blank" rel="noopener">${esc(d.nombre_archivo)}</a> <span class="note">${pesoTxt(d.bytes)} · ${fmt(d.subido_en)} · ${esc(d.subido_por_nombre)}${i ? ' · anterior' : ''}</span></li>`).join('')}</ul>`
+      : '<span class="note">Falta</span>';
+    const acepta = t === 'rooming' ? '.xlsx,.xls,.pdf,.jpg,.jpeg,.png' : '.pdf,.jpg,.jpeg,.png';
+    const subir = edita
+      ? `<label class="btn sm" for="up-${t}">${arch.length ? 'Subir otro' : 'Subir'}</label><input id="up-${t}" class="file-hidden" type="file" accept="${acepta}" data-up="${t}">`
+      : '';
+    return `<div class="docrow ${arch.length ? 'ok' : ''}"><div class="docrow-t"><span class="dot" aria-hidden="true"></span><div><b>${label}</b><span class="note">${ayuda}</span></div></div>
+      <div class="docrow-f">${lista}</div><div class="docrow-a">${subir}</div></div>`;
+  }).join('');
+  const conDocs = DOCS_GRUPO.filter(([t]) => docs.some((d) => d.tipo === t)).length;
+  return `<div class="card flat stack">
+    <div class="row space-between"><div><p class="eyebrow">Expediente del evento</p><h2>Evento y organizador</h2></div>
+      ${edita ? `<button class="btn ${e ? '' : 'primary'}" data-a="evento">${e ? 'Actualizar datos' : 'Completar datos del evento'}</button>` : ''}</div>
+    ${datosEv}
+    <div class="row space-between"><h3>Documentos del evento</h3><span class="note num">${conDocs} de ${DOCS_GRUPO.length} tipos con archivo</span></div>
+    <p class="note">PDF o foto. El rooming list puede ir en Excel. Un archivo nuevo no reemplaza al anterior: los dos quedan guardados.</p>
+    <div class="docrows">${filas}</div>
+    <p class="err" id="up-err" hidden></p>
+  </div>`;
+}
+
+// Impuestos: lista de 10 puntos de la guía y semáforo de riesgo del grupo.
+function verificacionGrupo({ verificacion = [], riesgos = [] }) {
+  const estado = {};
+  verificacion.forEach((v) => { estado[v.punto] = v; });
+  const marcados = CHECK_GRUPO.filter((_, i) => estado[i + 1]?.marcado).length;
+  const r = riesgos[riesgos.length - 1];
+  const hist = riesgos.slice(0, -1).reverse().map((x) => `<li><div><s>${RIESGOS[x.nivel].label}</s> <span class="muted">(anterior)</span></div><div class="t">${fmt(x.ts)} · ${esc(x.registrado_por_nombre)}</div><span class="m nota-gris">${esc(x.nota)}</span></li>`).join('');
+  return `<div class="two">
+    <div class="card flat stack">
+      <div class="row space-between"><div><p class="eyebrow">Control interno</p><h3>Verificación del expediente del grupo</h3></div><span class="pill ${marcados === CHECK_GRUPO.length ? 'done' : ''} num">${marcados} de ${CHECK_GRUPO.length}</span></div>
+      <div class="checks">${CHECK_GRUPO.map((c, i) => `<label><input type="checkbox" data-vg="${i + 1}" ${estado[i + 1]?.marcado ? 'checked' : ''}><span>${esc(c)}${estado[i + 1] ? `<span class="note block">${estado[i + 1].marcado ? 'Marcado' : 'Desmarcado'} por ${esc(estado[i + 1].registrado_por_nombre)} · ${fmt(estado[i + 1].ts)}</span>` : ''}</span></label>`).join('')}</div>
+      <p class="note">Cada marca queda guardada con tu nombre y la hora.</p>
+    </div>
+    <div class="card flat stack">
+      <div><p class="eyebrow">Mapa de riesgo</p><h3>¿Procede o no procede?</h3></div>
+      ${r ? `<div class="riesgo r-${r.nivel}"><b>${RIESGOS[r.nivel].label} · ${RIESGOS[r.nivel].sub}</b><span>${esc(r.nota)}</span><span class="note">${fmt(r.ts)} · ${esc(r.registrado_por_nombre)}</span></div>` : '<p class="muted">Sin evaluar.</p>'}
+      <div class="row">${Object.entries(RIESGOS).map(([k, x]) => `<button class="btn sm" data-a="riesgo" data-k="${k}">${x.label}</button>`).join('')}</div>
+      <p class="note">"¿Podría defender esto frente al SAT con expediente completo?" Si hay duda, es riesgo medio. Si no se puede probar, es riesgo alto.</p>
+      ${hist ? `<ol class="log">${hist}</ol>` : ''}
+    </div>
+  </div>`;
 }
 
 function extraGrupo(g, montos, facturas) {
@@ -220,11 +313,17 @@ function extraGrupo(g, montos, facturas) {
       ${hist ? `<ol class="log">${hist}</ol>` : ''}</div>`;
   }
   if (rol() === 'impuestos') {
-    return `<div class="card flat row space-between">
-      <div><p class="eyebrow">Factura del grupo</p><p>${fact ? `Folio <b class="mono">${esc(fact.folio)}</b> · ${fmt(fact.ts)} · ${esc(fact.registrado_por_nombre)}` : '<span class="muted">Sin folio registrado</span>'}</p>
-      ${facturas.length > 1 ? `<p class="note">Folios anteriores: ${facturas.slice(0, -1).reverse().map((f) => esc(f.folio)).join(', ')}</p>` : ''}
-      <p class="note">Monto registrado por Crédito: <b>${ultimo ? esc(ultimo.valor) : 'pendiente'}</b></p></div>
-      <button class="btn" data-a="factura">${fact ? 'Registrar otro folio' : 'Registrar folio de factura'}</button></div>`;
+    const linea = (tipo, titulo) => {
+      const fs = facturas.filter((f) => (f.tipo || 'evento') === tipo);
+      const u = fs[fs.length - 1];
+      return `<div><dt>${titulo}</dt><dd>${u ? `<span class="mono">${esc(u.folio)}</span> <span class="note">· ${fmt(u.ts)} · ${esc(u.registrado_por_nombre)}</span>` : '<span class="muted">Sin folio</span>'}
+        ${fs.length > 1 ? `<span class="note block">Anteriores: ${fs.slice(0, -1).reverse().map((f) => esc(f.folio)).join(', ')}</span>` : ''}</dd></div>`;
+    };
+    return `<div class="card flat stack">
+      <div class="row space-between"><div><p class="eyebrow">Facturas del grupo</p><p class="note">Días del evento con estímulo en un CFDI; días personales y consumos no vinculados al 16% en otro. Nunca en una sola factura.</p></div>
+      <button class="btn" data-a="factura">Registrar folio</button></div>
+      <dl class="info">${linea('evento', 'Factura del evento (estímulo)')}${linea('personal', 'Factura de días personales (16%)')}
+        <div><dt>Monto registrado por Crédito</dt><dd>${ultimo ? esc(ultimo.valor) : 'Pendiente'}</dd></div></dl></div>`;
   }
   if (['grupos', 'admin'].includes(rol()) && (ultimo || fact)) {
     return `<div class="card flat"><dl class="info">
@@ -254,15 +353,15 @@ function docCard(docs, tipo, num) {
     <div class="doc-h"><h3>${num ? `<span class="ord">${num}</span>` : ''}${DOCS[tipo].label}${sub}</h3>${vers}</div>
     <div class="doc-b">${v
       ? `${vieja ? '<span class="oldtag">Versión anterior</span>' : ''}<button class="view" data-a="zoom" data-d="${v.id}" data-t="${tipo}" aria-label="Ampliar ${DOCS[tipo].label}"><img class="paper" loading="lazy" src="/api/documentos/${v.id}/imagen" alt="${DOCS[tipo].label}, versión ${v.version}"></button>`
-      : '<div class="missing">Sin capturar</div>'}</div>
+      : `<div class="missing">${DOCS[tipo].opcional ? 'Sin capturar (opcional)' : 'Sin capturar'}</div>`}</div>
     ${v ? `<div class="doc-f">v${v.version} capturada el ${fmt(v.capturado_en)} en ${esc(v.capturado_por_nombre || 'la estación de captura')}</div>` : ''}
   </article>`;
 }
 
 function docsBloque(docs) {
-  if (rol() === 'impuestos') return `<div class="docs">${FILE_ORDER.map((t, i) => docCard(docs, t, i + 1)).join('')}</div>`;
+  if (rol() === 'impuestos') return `<div class="docs">${FILE_ORDER.filter((t) => t !== 'constancia' || docs.some((d) => d.tipo === t)).map((t, i) => docCard(docs, t, i + 1)).join('')}</div>`;
   const o = rol() === 'credito' ? ['pago', 'regcard', 'pasaporte', 'fmm'] : DOC_ORDER;
-  return `<div class="docs"><div class="two">${docCard(docs, o[0])}${docCard(docs, o[1])}</div><div class="two">${docCard(docs, o[2])}${docCard(docs, o[3])}</div></div>`;
+  return `<div class="docs"><div class="two">${docCard(docs, o[0])}${docCard(docs, o[1])}</div><div class="two">${docCard(docs, o[2])}${docCard(docs, o[3])}</div>${docCard(docs, 'constancia')}</div>`;
 }
 
 function accionesExp(e, codigo) {
@@ -286,7 +385,9 @@ function accionesExp(e, codigo) {
   const nota = `<p class="note">El botón se habilita al marcar todas las verificaciones.</p>`;
   if (rol() === 'grupos') {
     if (['rev_grupos', 'dev_grupos'].includes(e.estado)) {
-      return wrap('Verificación de Grupos', `${lista}${boton('aprobar', 'Aprobar y enviar a Crédito')}
+      const sinVence = !e.pasaporte_vence;
+      return wrap('Verificación de Grupos', `${lista}${sinVence ? '<div class="notice">Registra la fecha de vencimiento del pasaporte (abajo, en los datos del huésped) para poder aprobar.</div>' : ''}
+        <button class="btn primary block" data-a="accion" data-op="aprobar" id="btn-go" data-sinvence="${sinVence ? 1 : 0}" ${todas && !sinVence ? '' : 'disabled'}>Aprobar y enviar a Crédito</button>
         <div class="row">${motivo('recaptura', 'Pedir recaptura')}${motivo('no_aplica', 'No aplica')}</div>${nota}`);
     }
     if (['pendiente', 'incompleta'].includes(e.estado)) {
@@ -314,6 +415,8 @@ function accionesExp(e, codigo) {
   return '';
 }
 
+const puedeVence = (e) => ['frontdesk', 'grupos', 'admin'].includes(rol()) && ['pendiente', 'incompleta', 'rev_grupos', 'dev_grupos'].includes(e.estado);
+
 function pantallaExpediente({ expediente: e, grupo: g, documentos, bitacora, codigo }) {
   const log = bitacora.map((l) => `<li><div>${esc(l.accion)}</div><div class="t">${fmt(l.ts)} · ${esc(l.usuario_nombre)} (${esc(l.rol)})</div>${l.motivo ? `<span class="m">Motivo: ${esc(l.motivo)}</span>` : ''}</li>`).join('');
   return `${crumbs([{ t: 'Grupos', href: '#/' }, { t: g.nombre, href: `#/grupos/${g.id}` }, { t: `${e.nombre} ${e.apellidos}` }])}
@@ -325,12 +428,15 @@ function pantallaExpediente({ expediente: e, grupo: g, documentos, bitacora, cod
     <div class="exp">${docsBloque(documentos)}
       <aside class="side">
         ${accionesExp(e, codigo)}
-        <div class="card"><dl class="kv">
+        <div class="card stack"><dl class="kv">
           <dt>Pasaporte</dt><dd class="mono">${esc(e.pasaporte || 'Por capturar')}</dd>
+          <dt>Vence</dt><dd>${e.pasaporte_vence ? dateTxt(e.pasaporte_vence) : '<span class="muted">Sin registrar</span>'}</dd>
           <dt>Nacionalidad</dt><dd>${esc(e.nacionalidad)}</dd>
           <dt>Llegada del grupo</dt><dd>${dateTxt(g.llegada)}</dd><dt>Salida del grupo</dt><dd>${dateTxt(g.salida)}</dd>
           <dt>Grupo</dt><dd class="mono">${esc(g.codigo_opera || folioGrupo(g.folio))}</dd>
-        </dl></div>
+        </dl>
+        ${e.pasaporte_vence && e.pasaporte_vence < g.salida ? '<div class="notice">El pasaporte vence antes de la salida del grupo. Revisa que estuviera vigente en las fechas de la estancia.</div>' : ''}
+        ${puedeVence(e) ? `<button class="btn sm" data-a="vence">${e.pasaporte_vence ? 'Corregir vencimiento' : 'Registrar vencimiento del pasaporte'}</button>` : ''}</div>
         <div class="card stack"><div class="row space-between"><h3>Bitácora</h3><span class="note">No se puede editar ni borrar</span></div><ol class="log">${log}</ol></div>
       </aside></div>`;
 }
@@ -361,6 +467,7 @@ function modalHTML() {
         <div class="field"><label for="h-nac">Nacionalidad</label><select id="h-nac" required>${opcionesPaises()}</select>
           <span class="note" id="h-nac-mx" hidden>Los huéspedes de nacionalidad mexicana no aplican para tax free; Grupos lo marcará como No aplica.</span></div>
         <div class="field"><label for="h-pas">No. de pasaporte <span class="muted">(opcional)</span></label><input type="text" id="h-pas" maxlength="30" autocomplete="off"></div>
+        <div class="field"><label for="h-vence">Vencimiento del pasaporte <span class="muted">(opcional)</span></label><input type="date" id="h-vence"></div>
       </div>
       <label class="toggle"><input type="checkbox" id="h-qr" checked> Generar su código QR al guardar</label>
       <p class="err" id="h-err" hidden></p>
@@ -402,9 +509,35 @@ function modalHTML() {
   if (m.kind === 'factura') {
     const g = vista.datos.grupo;
     inner = `<form class="modal" data-form="factura" novalidate><h2>Registrar folio de factura</h2><p class="muted">${esc(g.nombre)}</p>
+      <div class="field"><label for="fa-tipo">¿Qué ampara esta factura?</label><select id="fa-tipo"><option value="evento">Días del evento (estímulo, sin traslado de IVA)</option><option value="personal">Días personales o consumos no vinculados (16%)</option></select></div>
       <div class="field"><label for="fa-folio">Folio de la factura emitida</label><input type="text" id="fa-folio" maxlength="60" required placeholder="Ej. FMK-A 20931"></div>
       <p class="err" id="fa-err" hidden></p>
       <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Registrar folio</button></div></form>`;
+  }
+  if (m.kind === 'evento') {
+    const ev = vista.datos.evento || [];
+    inner = `<form class="modal wide-form" data-form="evento" novalidate><h2>Datos del evento</h2><p class="muted">${esc(vista.datos.grupo.nombre)}</p>
+      ${camposEvento('ev', ev[ev.length - 1])}
+      ${ev.length ? '<p class="note">Los datos anteriores quedan en la bitácora del grupo.</p>' : ''}
+      <p class="err" id="ev-err" hidden></p>
+      <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Guardar</button></div></form>`;
+  }
+  if (m.kind === 'riesgo') {
+    const R = RIESGOS[m.k];
+    inner = `<form class="modal" data-form="riesgo" novalidate><h2>${R.label} · ${R.sub}</h2><p class="muted">${esc(vista.datos.grupo.nombre)}</p>
+      <p class="note">Ejemplos: ${esc(R.ej)}</p>
+      <div class="field"><label for="ri-nota">¿Por qué este nivel?</label><textarea id="ri-nota" maxlength="500" required placeholder="Ej. Convención con agenda formal y contrato; 3 habitaciones compartidas con una sola firma."></textarea></div>
+      <p class="note">Queda en la bitácora del grupo con tu nombre.</p>
+      <p class="err" id="ri-err" hidden></p>
+      <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Registrar</button></div></form>`;
+  }
+  if (m.kind === 'vence') {
+    const e = vista.datos.expediente;
+    inner = `<form class="modal" data-form="vence" novalidate><h2>Vencimiento del pasaporte</h2><p class="muted">${esc(e.nombre)} ${esc(e.apellidos)} · <span class="mono">${folioExp(e.folio)}</span></p>
+      <div class="field"><label for="ve-fecha">Fecha de vencimiento, tal como aparece en el pasaporte</label><input type="date" id="ve-fecha" required value="${esc(e.pasaporte_vence || '')}"></div>
+      <p class="note">El pasaporte debe estar vigente en las fechas de la estancia. El cambio queda en la bitácora.</p>
+      <p class="err" id="ve-err" hidden></p>
+      <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Guardar</button></div></form>`;
   }
   return `<div class="scrim" data-a="scrim">${inner}</div>`;
 }
@@ -458,7 +591,7 @@ async function enviarHuesped(f) {
   try {
     const r = await api('POST', `/api/grupos/${g.id}/huespedes`, {
       nombre: v('h-nom'), apellidos: v('h-ape'), nacionalidad_codigo: pais[1], nacionalidad: pais[0],
-      pasaporte: v('h-pas'), generar_qr: f.querySelector('#h-qr').checked,
+      pasaporte: v('h-pas'), pasaporte_vence: v('h-vence') || null, generar_qr: f.querySelector('#h-qr').checked,
     });
     toast('Huésped dado de alta.');
     if (r.codigo) {
@@ -514,6 +647,15 @@ document.addEventListener('click', (ev) => {
     case 'factura':
       abrirModal({ kind: 'factura' });
       break;
+    case 'evento':
+      abrirModal({ kind: 'evento' });
+      break;
+    case 'riesgo':
+      abrirModal({ kind: 'riesgo', k: d.k });
+      break;
+    case 'vence':
+      abrirModal({ kind: 'vence' });
+      break;
     case 'accion':
       ejecutar(d.op, null, null, el);
       break;
@@ -533,7 +675,10 @@ document.addEventListener('submit', (ev) => {
   if (f.dataset.form === 'altahues') enviarHuesped(f);
   if (f.dataset.form === 'motivo') enviarMotivo(f);
   if (f.dataset.form === 'monto') enviarGrupo(f, 'monto', { valor: f.querySelector('#mo-val').value.trim(), nota: f.querySelector('#mo-nota').value.trim() }, 'Monto registrado.');
-  if (f.dataset.form === 'factura') enviarGrupo(f, 'factura', { folio: f.querySelector('#fa-folio').value.trim() }, 'Folio registrado.');
+  if (f.dataset.form === 'factura') enviarGrupo(f, 'factura', { folio: f.querySelector('#fa-folio').value.trim(), tipo: f.querySelector('#fa-tipo').value }, 'Folio registrado.');
+  if (f.dataset.form === 'evento') enviarEvento(f);
+  if (f.dataset.form === 'riesgo') enviarGrupo(f, 'riesgo', { nivel: state.modal.k, nota: f.querySelector('#ri-nota').value.trim() }, 'Riesgo registrado.');
+  if (f.dataset.form === 'vence') enviarVence(f);
 });
 
 document.addEventListener('change', (ev) => {
@@ -544,7 +689,15 @@ document.addEventListener('change', (ev) => {
     const arr = (ui.checks[id] = (ui.checks[id] || []).filter((x) => x !== i));
     if (c.checked) arr.push(i);
     const btn = document.getElementById('btn-go');
-    if (btn) btn.disabled = !(CHECKS[rol()] || []).every((_, j) => arr.includes(j));
+    if (btn) btn.disabled = btn.dataset.sinvence === '1' || !(CHECKS[rol()] || []).every((_, j) => arr.includes(j));
+  }
+  const vg = ev.target.closest?.('[data-vg]');
+  if (vg) marcarPunto(vg);
+  const up = ev.target.closest?.('[data-up]');
+  if (up) subirDocGrupo(up);
+  if (/^(a|ev)-pais$/.test(ev.target.id)) {
+    const n = document.getElementById(`${ev.target.id}-mx`);
+    if (n) n.hidden = ev.target.value !== 'MEX';
   }
   validarMotivo();
   if (ev.target.id === 'h-nac') {
@@ -637,6 +790,98 @@ async function enviarGrupo(f, tipo, datos, msg) {
     err.hidden = false;
     err.textContent = e.message;
     btn.disabled = false;
+  }
+}
+
+async function enviarEvento(f) {
+  const err = f.querySelector('#ev-err');
+  const datos = leerEvento(f, 'ev');
+  if (!datos.tipo || datos.organizador.length < 2) {
+    err.hidden = false;
+    err.textContent = 'Elige el tipo de evento y escribe el organizador.';
+    return;
+  }
+  const btn = f.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    await api('POST', `/api/grupos/${vista.datos.grupo.id}/evento`, datos);
+    state.modal = null;
+    toast('Datos del evento guardados.');
+    recargar();
+  } catch (e) {
+    err.hidden = false;
+    err.textContent = e.message;
+    btn.disabled = false;
+  }
+}
+
+async function enviarVence(f) {
+  const err = f.querySelector('#ve-err');
+  const fecha = f.querySelector('#ve-fecha').value;
+  if (!fecha) {
+    err.hidden = false;
+    err.textContent = 'Escribe la fecha de vencimiento.';
+    return;
+  }
+  const btn = f.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    await api('POST', `/api/expedientes/${vista.datos.expediente.id}/vencimiento`, { fecha });
+    state.modal = null;
+    toast('Vencimiento registrado.');
+    recargar();
+  } catch (e) {
+    err.hidden = false;
+    err.textContent = e.message;
+    btn.disabled = false;
+  }
+}
+
+const MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', xls: 'application/vnd.ms-excel' };
+
+async function subirDocGrupo(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const err = document.getElementById('up-err');
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  const tipo = MIME[ext] || file.type;
+  const fallo = (m) => {
+    if (err) {
+      err.hidden = false;
+      err.textContent = m;
+    } else toast(m);
+    input.value = '';
+  };
+  if (!Object.values(MIME).includes(tipo)) return fallo('Ese tipo de archivo no se acepta. Usa PDF, JPG o PNG (Excel solo para el rooming list).');
+  if (file.size > 20 * 1024 * 1024) return fallo('El archivo debe pesar menos de 20 MB.');
+  const label = input.previousElementSibling;
+  if (label) {
+    label.classList.add('is-disabled');
+    label.textContent = 'Subiendo…';
+  }
+  try {
+    const blob = new Blob([await file.arrayBuffer()], { type: tipo });
+    await api('POST', `/api/grupos/${vista.datos.grupo.id}/documentos?tipo=${input.dataset.up}&nombre=${encodeURIComponent(file.name.slice(0, 200))}`, blob);
+    toast('Archivo guardado.');
+    recargar();
+  } catch (e) {
+    if (label) {
+      label.classList.remove('is-disabled');
+      label.textContent = 'Subir';
+    }
+    fallo(e.message);
+  }
+}
+
+async function marcarPunto(input) {
+  input.disabled = true;
+  try {
+    await api('POST', `/api/grupos/${vista.datos.grupo.id}/verificacion`, { punto: +input.dataset.vg, marcado: input.checked });
+    recargar();
+  } catch (e) {
+    input.checked = !input.checked;
+    input.disabled = false;
+    toast(e.message);
   }
 }
 

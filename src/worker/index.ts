@@ -10,7 +10,18 @@ type Vars = { db: Db; perfil: Perfil; tokens: Tokens };
 
 const COOKIE = 'tz_sesion';
 const PC: Rol[] = ['admin', 'grupos', 'frontdesk', 'credito', 'impuestos'];
-const TIPOS = ['pasaporte', 'regcard', 'pago', 'fmm'] as const;
+const TIPOS = ['pasaporte', 'regcard', 'pago', 'fmm', 'constancia'] as const;
+const TIPOS_EVENTO = ['congreso', 'convencion', 'exposicion', 'feria'];
+const DOCS_GRUPO = ['contrato', 'agenda', 'salones', 'asistentes', 'organizador', 'constancias', 'rooming'];
+const MAX_DOC_GRUPO = 20 * 1024 * 1024;
+// Tipos de archivo aceptados para documentos del evento, con su firma de inicio.
+const ARCHIVOS: Record<string, { ext: string; firma: number[] }> = {
+  'application/pdf': { ext: 'pdf', firma: [0x25, 0x50, 0x44, 0x46] },
+  'image/jpeg': { ext: 'jpg', firma: [0xff, 0xd8, 0xff] },
+  'image/png': { ext: 'png', firma: [0x89, 0x50, 0x4e, 0x47] },
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': { ext: 'xlsx', firma: [0x50, 0x4b, 0x03, 0x04] },
+  'application/vnd.ms-excel': { ext: 'xls', firma: [0xd0, 0xcf, 0x11, 0xe0] },
+};
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const CODIGO = /^TZ-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
 const MAX_FOTO = 8 * 1024 * 1024;
@@ -171,7 +182,89 @@ app.post('/api/grupos', async (c) => {
     p_salida: salida,
     p_estimados: est,
   });
+  if (b.evento && b.evento.tipo) await registrarEvento(c, id, b.evento);
   return c.json({ id }, 201);
+});
+
+async function registrarEvento(c: any, grupo: string, e: any) {
+  if (!TIPOS_EVENTO.includes(e.tipo)) throw new ErrorApi(400, 'Elige el tipo de evento.');
+  const pais = texto(e.pais_codigo, 3, false).toUpperCase();
+  if (pais && !/^[A-Z]{3}$/.test(pais)) throw new ErrorApi(400, 'Elige el país del organizador de la lista.');
+  await c.get('db').rpc('registrar_evento', {
+    p_grupo: grupo, p_tipo: e.tipo, p_organizador: texto(e.organizador, 200),
+    p_pais_codigo: pais || null, p_pais: texto(e.pais, 80, false) || null, p_id_fiscal: texto(e.id_fiscal, 60, false) || null,
+  });
+}
+
+app.post('/api/grupos/:id/evento', async (c) => {
+  exigir(c, 'grupos', 'admin');
+  const id = uuid(c.req.param('id'));
+  await registrarEvento(c, id, await c.req.json().catch(() => ({})));
+  return c.json({ ok: true }, 201);
+});
+
+app.post('/api/grupos/:id/documentos', async (c) => {
+  exigir(c, 'grupos', 'admin');
+  const id = uuid(c.req.param('id'));
+  const tipo = c.req.query('tipo') || '';
+  if (!DOCS_GRUPO.includes(tipo)) throw new ErrorApi(400, 'Tipo de documento inválido.');
+  const nombre = texto(c.req.query('nombre'), 200);
+  const mime = (c.req.header('content-type') || '').split(';')[0].trim();
+  const a = ARCHIVOS[mime];
+  const esExcel = a?.ext === 'xlsx' || a?.ext === 'xls';
+  if (!a || (esExcel && tipo !== 'rooming')) {
+    throw new ErrorApi(415, tipo === 'rooming' ? 'Sube el rooming list en Excel, PDF o foto.' : 'Sube el documento en PDF o como foto (JPG o PNG).');
+  }
+  const cuerpo = await c.req.arrayBuffer();
+  if (cuerpo.byteLength < 100 || cuerpo.byteLength > MAX_DOC_GRUPO) {
+    throw new ErrorApi(413, 'El archivo debe pesar menos de 20 MB.');
+  }
+  const ini = new Uint8Array(cuerpo, 0, 4);
+  if (!a.firma.every((b, i) => ini[i] === b)) throw new ErrorApi(415, 'El archivo no corresponde a su tipo. Vuelve a exportarlo.');
+  const ruta = `grp/${id}/${tipo}/${crypto.randomUUID()}.${a.ext}`;
+  const db = c.get('db');
+  await db.subir('documentos', ruta, cuerpo, mime, 'No se pudo guardar el archivo. Intenta de nuevo.');
+  const doc = await db.rpc<string>('registrar_doc_grupo', {
+    p_grupo: id, p_tipo: tipo, p_ruta: ruta, p_nombre: nombre, p_mime: mime, p_bytes: cuerpo.byteLength,
+  });
+  return c.json({ id: doc }, 201);
+});
+
+app.get('/api/documentos-grupo/:id/archivo', async (c) => {
+  exigir(c, 'admin', 'grupos', 'credito', 'impuestos');
+  const id = uuid(c.req.param('id'));
+  const db = c.get('db');
+  const [doc] = await db.select(`documentos_grupo?id=eq.${id}&select=ruta,mime,nombre_archivo`);
+  if (!doc) throw new ErrorApi(404, 'El documento no existe.');
+  const res = await db.descargar('documentos', doc.ruta);
+  const enLinea = doc.mime === 'application/pdf' || doc.mime.startsWith('image/');
+  const nombre = encodeURIComponent(doc.nombre_archivo);
+  return new Response(res.body, {
+    headers: {
+      'content-type': doc.mime,
+      'content-disposition': `${enLinea ? 'inline' : 'attachment'}; filename*=UTF-8''${nombre}`,
+      'cache-control': 'private, max-age=3600',
+    },
+  });
+});
+
+app.post('/api/grupos/:id/verificacion', async (c) => {
+  exigir(c, 'impuestos');
+  const id = uuid(c.req.param('id'));
+  const b = await c.req.json().catch(() => ({}));
+  const punto = Number(b.punto);
+  if (!Number.isInteger(punto) || punto < 1 || punto > 10) throw new ErrorApi(400, 'Punto de verificación inválido.');
+  await c.get('db').rpc('marcar_verificacion', { p_grupo: id, p_punto: punto, p_marcado: !!b.marcado });
+  return c.json({ ok: true }, 201);
+});
+
+app.post('/api/grupos/:id/riesgo', async (c) => {
+  exigir(c, 'impuestos');
+  const id = uuid(c.req.param('id'));
+  const b = await c.req.json().catch(() => ({}));
+  if (!['bajo', 'medio', 'alto'].includes(b.nivel)) throw new ErrorApi(400, 'Elige el nivel de riesgo.');
+  await c.get('db').rpc('registrar_riesgo', { p_grupo: id, p_nivel: b.nivel, p_nota: texto(b.nota, 500) });
+  return c.json({ ok: true }, 201);
 });
 
 app.get('/api/grupos/:id', async (c) => {
@@ -199,13 +292,25 @@ app.get('/api/grupos/:id', async (c) => {
   }
   let montos: any[] = [];
   let facturas: any[] = [];
+  let evento: any[] = [];
+  let docs_grupo: any[] = [];
+  let verificacion: any[] = [];
+  let riesgos: any[] = [];
+  let bitacora: any[] = [];
   if (c.get('perfil').rol !== 'frontdesk') {
-    [montos, facturas] = await Promise.all([
+    [montos, facturas, evento, docs_grupo, verificacion, riesgos, bitacora] = await Promise.all([
       db.select(`montos_grupo?grupo_id=eq.${id}&select=id,valor,nota,registrado_por_nombre,ts&order=ts.asc,id.asc`),
-      db.select(`facturas_grupo?grupo_id=eq.${id}&select=id,folio,registrado_por_nombre,ts&order=ts.asc,id.asc`),
+      db.select(`facturas_grupo?grupo_id=eq.${id}&select=id,folio,tipo,registrado_por_nombre,ts&order=ts.asc,id.asc`),
+      db.select(`evento_grupo?grupo_id=eq.${id}&select=id,tipo,organizador,pais_codigo,pais,id_fiscal,registrado_por_nombre,ts&order=ts.asc,id.asc`),
+      db.select(`documentos_grupo?grupo_id=eq.${id}&select=id,tipo,nombre_archivo,mime,bytes,subido_por_nombre,subido_en&order=subido_en.asc`),
+      db.select(`verificacion_grupo?grupo_id=eq.${id}&select=punto,marcado,registrado_por_nombre,ts&order=ts.asc,id.asc`),
+      db.select(`riesgo_grupo?grupo_id=eq.${id}&select=id,nivel,nota,registrado_por_nombre,ts&order=ts.asc,id.asc`),
+      db.select(`bitacora?grupo_id=eq.${id}&expediente_id=is.null&select=ts,usuario_nombre,rol,accion,motivo&order=ts.desc,id.desc&limit=100`),
     ]);
+  } else {
+    evento = await db.select(`evento_grupo?grupo_id=eq.${id}&select=id,tipo,organizador,pais,ts&order=ts.asc,id.asc`);
   }
-  return c.json({ grupo, expedientes, codigos, montos, facturas });
+  return c.json({ grupo, expedientes, codigos, montos, facturas, evento, docs_grupo, verificacion, riesgos, bitacora });
 });
 
 app.post('/api/grupos/:id/monto', async (c) => {
@@ -220,7 +325,8 @@ app.post('/api/grupos/:id/factura', async (c) => {
   exigir(c, 'impuestos');
   const id = uuid(c.req.param('id'));
   const b = await c.req.json().catch(() => ({}));
-  await c.get('db').rpc('registrar_factura', { p_grupo: id, p_folio: texto(b.folio, 60) });
+  const tipo = b.tipo === 'personal' ? 'personal' : 'evento';
+  await c.get('db').rpc('registrar_factura_tipo', { p_grupo: id, p_folio: texto(b.folio, 60), p_tipo: tipo });
   return c.json({ ok: true }, 201);
 });
 
@@ -239,6 +345,7 @@ app.post('/api/grupos/:id/huespedes', async (c) => {
     p_nac_nombre: texto(b.nacionalidad, 80),
     p_pasaporte: texto(b.pasaporte, 30, false),
   });
+  if (b.pasaporte_vence) await db.rpc('registrar_vencimiento', { p_expediente: id, p_fecha: fecha(b.pasaporte_vence) });
   let codigo = null;
   if (b.generar_qr) {
     [codigo] = await db.rpc<any[]>('generar_codigo', { p_expediente: id });
@@ -289,6 +396,14 @@ app.post('/api/expedientes/:id/accion', async (c) => {
     p_motivo: texto(b.motivo, 500, false) || null, p_docs: docs && docs.length ? docs : null,
   });
   return c.json({ estado });
+});
+
+app.post('/api/expedientes/:id/vencimiento', async (c) => {
+  exigir(c, 'frontdesk', 'grupos', 'admin');
+  const id = uuid(c.req.param('id'));
+  const b = await c.req.json().catch(() => ({}));
+  await c.get('db').rpc('registrar_vencimiento', { p_expediente: id, p_fecha: fecha(b.fecha) });
+  return c.json({ ok: true }, 201);
 });
 
 app.post('/api/expedientes/:id/codigo', async (c) => {

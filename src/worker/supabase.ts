@@ -88,7 +88,10 @@ export class Db {
     return res.json();
   }
 
-  async subir(bucket: string, ruta: string, cuerpo: ArrayBuffer, tipo: string): Promise<void> {
+  async subir(
+    bucket: string, ruta: string, cuerpo: ArrayBuffer, tipo: string,
+    rechazo = 'La captura ya no está activa. Pide a Front Desk un código nuevo.',
+  ): Promise<void> {
     const res = await fetch(`${this.env.SUPABASE_URL}/storage/v1/object/${bucket}/${ruta}`, {
       method: 'POST',
       headers: this.headers({ 'content-type': tipo, 'x-upsert': 'false', 'cache-control': 'max-age=31536000' }),
@@ -97,7 +100,7 @@ export class Db {
     if (!res.ok) {
       const e = await leerError(res);
       if (res.status === 403 || res.status === 400) {
-        throw new ErrorApi(403, 'La captura ya no está activa. Pide a Front Desk un código nuevo.');
+        throw new ErrorApi(403, rechazo);
       }
       throw e;
     }
