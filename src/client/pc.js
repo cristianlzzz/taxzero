@@ -21,6 +21,9 @@ function rutaActual() {
   let m;
   if (h === '/grupos/nuevo') return { s: 'alta' };
   if (h === '/usuarios') return { s: 'usuarios' };
+  if (h === '/avance') return { s: 'avance' };
+  if (h === '/bitacora') return { s: 'bitacora' };
+  if ((m = h.match(/^\/expedientes\/([0-9a-f-]{36})\/imprimir$/))) return { s: 'imprimir', id: m[1] };
   if ((m = h.match(/^\/grupos\/([0-9a-f-]{36})$/))) return { s: 'grupo', id: m[1] };
   if ((m = h.match(/^\/expedientes\/([0-9a-f-]{36})$/))) return { s: 'exp', id: m[1] };
   return { s: 'grupos' };
@@ -60,6 +63,9 @@ function cargar(ruta) {
   if (ruta.s === 'grupo') return api('GET', `/api/grupos/${ruta.id}`);
   if (ruta.s === 'exp') return api('GET', `/api/expedientes/${ruta.id}`);
   if (ruta.s === 'usuarios') return api('GET', '/api/usuarios');
+  if (ruta.s === 'avance') return api('GET', '/api/grupos');
+  if (ruta.s === 'imprimir') return api('GET', `/api/expedientes/${ruta.id}`);
+  if (ruta.s === 'bitacora') return cargarBitacora();
   return Promise.resolve({});
 }
 
@@ -71,6 +77,9 @@ function pintar() {
   else if (vista.ruta.s === 'grupo') body = pantallaGrupo(vista.datos);
   else if (vista.ruta.s === 'exp') body = pantallaExpediente(vista.datos);
   else if (vista.ruta.s === 'usuarios') body = pantallaUsuarios(vista.datos);
+  else if (vista.ruta.s === 'avance') body = pantallaAvance(vista.datos);
+  else if (vista.ruta.s === 'bitacora') body = pantallaBitacora(vista.datos);
+  else if (vista.ruta.s === 'imprimir') body = pantallaImprimir(vista.datos);
   else body = pantallaGrupos(vista.datos);
   root.innerHTML = `${header()}<main class="wrap">${body}</main>${modalHTML()}`;
 }
@@ -199,7 +208,7 @@ function pantallaGrupo(datos) {
   const presentes = Object.keys(ESTADOS).filter((k) => expedientes.some((e) => e.estado === k));
   const enCola = (e) => cola().includes(e.estado);
   const mostrados = expedientes
-    .filter((e) => f === 'todos' || (f === 'mios' ? enCola(e) : e.estado === f))
+    .filter((e) => f === 'todos' || (f === 'mios' ? enCola(e) : f === 'detenidos' ? detenido(e) : e.estado === f))
     .sort((a, b) => enCola(b) - enCola(a) || (b.actualizado_en > a.actualizado_en ? 1 : -1));
   const esFD = ['frontdesk', 'admin'].includes(rol());
   const filas = mostrados
@@ -211,15 +220,17 @@ function pantallaGrupo(datos) {
       return `<tr class="${enCola(e) ? 'q' : ''}">
         <td><b>${esc(e.nombre)} ${esc(e.apellidos)}</b><span class="sub mono">${folioExp(e.folio)}</span></td>
         <td>${esc(e.nacionalidad)}</td><td class="mono">${esc(e.pasaporte || '·')}</td>
-        <td>${pill(e.estado)}</td><td class="muted num">${fmt(e.actualizado_en)}</td>
+        <td>${pill(e.estado)}${detenido(e) ? `<span class="sub detenido">Sin movimiento hace ${diasSin(e.actualizado_en)} días</span>` : ''}</td><td class="muted num">${fmt(e.actualizado_en)}</td>
         <td class="tdact">${act}<a class="btn sm" href="#/expedientes/${e.id}">Abrir</a></td></tr>`;
     })
     .join('');
   const cap = QUEUE_WORD[rol()];
-  const filtros = [['todos', 'Todos'], ...(cola().length ? [['mios', cap[0].toUpperCase() + cap.slice(1)]] : []), ...presentes.map((k) => [k, ESTADOS[k]])];
+  const nDet = expedientes.filter(detenido).length;
+  const filtros = [['todos', 'Todos'], ...(cola().length ? [['mios', cap[0].toUpperCase() + cap.slice(1)]] : []), ...(nDet ? [['detenidos', `Detenidos (${nDet})`]] : []), ...presentes.map((k) => [k, ESTADOS[k]])];
   return `${crumbs([{ t: 'Grupos', href: '#/' }, { t: g.nombre }])}
     <section class="page-head"><div><p class="eyebrow mono">${esc(g.codigo_opera || folioGrupo(g.folio))}</p><h1>${esc(g.nombre)}</h1></div>
-      ${esFD ? `<button class="btn primary" data-a="altahues">Dar de alta un huésped</button>` : ''}</section>
+      <div class="row">${rol() !== 'frontdesk' && expedientes.length ? `<a class="btn" href="/api/grupos/${g.id}/excel" data-descarga>Descargar en Excel</a>` : ''}
+      ${esFD ? `<button class="btn primary" data-a="altahues">Dar de alta un huésped</button>` : ''}</div></section>
     <div class="stack">
       <div class="card flat"><dl class="info">
         <div><dt>Empresa</dt><dd>${esc(g.empresa)}</dd></div>
@@ -424,7 +435,8 @@ function pantallaExpediente({ expediente: e, grupo: g, documentos, bitacora, cod
   const log = bitacora.map((l) => `<li><div>${esc(l.accion)}</div><div class="t">${fmt(l.ts)} · ${esc(l.usuario_nombre)} (${esc(l.rol)})</div>${l.motivo ? `<span class="m">Motivo: ${esc(l.motivo)}</span>` : ''}</li>`).join('');
   return `${crumbs([{ t: 'Grupos', href: '#/' }, { t: g.nombre, href: `#/grupos/${g.id}` }, { t: `${e.nombre} ${e.apellidos}` }])}
     <section class="page-head"><div><p class="eyebrow mono">${folioExp(e.folio)}</p><h1>${esc(e.nombre)} ${esc(e.apellidos)}</h1>
-      <div class="row mt-8">${pill(e.estado)}<span class="muted">${esc(e.nacionalidad)}</span></div></div></section>
+      <div class="row mt-8">${pill(e.estado)}<span class="muted">${esc(e.nacionalidad)}</span></div></div>
+      ${documentos.length ? `<a class="btn" href="#/expedientes/${e.id}/imprimir">Imprimir expediente</a>` : ''}</section>
     ${['dev_grupos', 'dev_credito'].includes(e.estado) && bitacora[0]?.motivo ? `<div class="notice mt-neg"><b>${esc(bitacora[0].accion)}</b> por ${esc(bitacora[0].usuario_nombre)} (${esc(bitacora[0].rol)}). Motivo: ${esc(bitacora[0].motivo)}</div>` : ''}
     ${e.nacionalidad_codigo === 'MEX' ? '<div class="notice mt-neg">Nacionalidad mexicana: no aplica para tax free. Grupos lo marcará como No aplica.</div>' : ''}
     ${rol() === 'impuestos' ? '<p class="note mt-neg">Documentos en el orden del archivo físico.</p>' : ''}
@@ -442,6 +454,141 @@ function pantallaExpediente({ expediente: e, grupo: g, documentos, bitacora, cod
         ${puedeVence(e) ? `<button class="btn sm" data-a="vence">${e.pasaporte_vence ? 'Corregir vencimiento' : 'Registrar vencimiento del pasaporte'}</button>` : ''}</div>
         <div class="card stack"><div class="row space-between"><h3>Bitácora</h3><span class="note">No se puede editar ni borrar</span></div><ol class="log">${log}</ol></div>
       </aside></div>`;
+}
+
+// ------------------------------------------------------------------ avance (etapa 5)
+const DIAS_DETENIDO = 3;
+const FINALES = ['cerrado', 'no_aplica'];
+const diasSin = (ts) => Math.floor((Date.now() - new Date(ts).getTime()) / 86400000);
+const detenido = (e) => !FINALES.includes(e.estado) && diasSin(e.actualizado_en) >= DIAS_DETENIDO;
+
+// Columnas del avance: cada paso del flujo junta sus estados (incluye los devueltos a esa área).
+const PASOS = [
+  ['Por capturar', 'Front Desk', ['pendiente', 'incompleta']],
+  ['En Grupos', 'Revisión', ['rev_grupos', 'dev_grupos']],
+  ['En Crédito', 'Validación', ['val_credito', 'dev_credito']],
+  ['En Impuestos', 'Revisión final', ['rev_impuestos']],
+  ['Cerrados', '', ['cerrado']],
+  ['No aplica', '', ['no_aplica']],
+];
+
+function pantallaAvance({ grupos = [] }) {
+  const solo = !!ui.avSolo;
+  const lista = solo ? grupos.filter((g) => g.detenidos) : grupos;
+  const n = (g, estados) => estados.reduce((s, k) => s + ((g.conteo || {})[k] || 0), 0);
+  const total = (g) => Object.values(g.conteo || {}).reduce((s, x) => s + x, 0);
+  const celda = (v, cls = '') => `<td class="num ${cls}">${v ? v : '<span class="muted">·</span>'}</td>`;
+  const filas = lista.map((g) => `<tr>
+      <td><a href="#/grupos/${g.id}"><b>${esc(g.nombre)}</b></a><span class="sub"><span class="mono">${esc(g.codigo_opera || folioGrupo(g.folio))}</span> · ${dateTxt(g.llegada)} al ${dateTxt(g.salida)}</span></td>
+      <td class="num">${total(g)}${g.estimados ? `<span class="sub">de ${g.estimados} estimados</span>` : ''}</td>
+      ${PASOS.map(([, , est], i) => celda(n(g, est), i === PASOS.length - 2 ? 'ok' : '')).join('')}
+      ${celda(g.detenidos, g.detenidos ? 'alerta' : '')}
+      <td class="muted num">${g.ultimo_movimiento ? fmt(g.ultimo_movimiento) : 'Sin huéspedes'}</td></tr>`).join('');
+  const totales = PASOS.map(([, , est]) => lista.reduce((s, g) => s + n(g, est), 0));
+  return `<section class="page-head"><div><p class="eyebrow">Reportes</p><h1>Avance por <span class="hl">grupo</span></h1>
+      <p class="lead">Cuántos expedientes hay en cada paso del flujo y cuáles llevan ${DIAS_DETENIDO} días o más sin movimiento.</p></div></section>
+    <div class="stack">
+      <div class="row space-between"><label class="check-inline"><input type="checkbox" data-a="av-solo" ${solo ? 'checked' : ''}> Solo grupos con expedientes detenidos</label>
+        <span class="note">Detenido: no está cerrado ni marcado como No aplica, y nadie lo ha movido en ${DIAS_DETENIDO} días.</span></div>
+      <div class="tablewrap"><table class="avance"><thead><tr><th>Grupo</th><th class="num">Huéspedes</th>
+        ${PASOS.map(([t, sub]) => `<th class="num">${t}${sub ? `<span class="sub">${sub}</span>` : ''}</th>`).join('')}
+        <th class="num">Detenidos</th><th>Último movimiento</th></tr></thead>
+        <tbody>${filas || `<tr><td colspan="${PASOS.length + 4}" class="empty">${solo ? 'Ningún grupo tiene expedientes detenidos.' : 'Todavía no hay grupos.'}</td></tr>`}</tbody>
+        ${lista.length > 1 ? `<tfoot><tr><td>Todos los grupos mostrados</td><td class="num">${lista.reduce((s, g) => s + total(g), 0)}</td>${totales.map((v) => `<td class="num">${v}</td>`).join('')}<td class="num">${lista.reduce((s, g) => s + (g.detenidos || 0), 0)}</td><td></td></tr></tfoot>` : ''}
+      </table></div>
+    </div>`;
+}
+
+// ------------------------------------------------------------------ bitácora general (etapa 5)
+const AREAS = ['Administración', 'Grupos', 'Front Desk', 'iPad', 'Crédito', 'Impuestos'];
+
+function consultaBitacora(extra = {}) {
+  const f = { ...(ui.bitf || {}), ...extra };
+  const q = new URLSearchParams();
+  Object.entries(f).forEach(([k, v]) => { if (v !== '' && v != null) q.set(k, v); });
+  return q.toString();
+}
+
+async function cargarBitacora() {
+  const [b, g] = await Promise.all([api('GET', `/api/bitacora?${consultaBitacora()}`), api('GET', '/api/grupos')]);
+  return { ...b, grupos: g.grupos };
+}
+
+async function masBitacora(btn) {
+  btn.disabled = true;
+  try {
+    const b = await api('GET', `/api/bitacora?${consultaBitacora({ pagina: vista.datos.pagina + 1 })}`);
+    vista.datos.filas = vista.datos.filas.concat(b.filas);
+    vista.datos.hay_mas = b.hay_mas;
+    vista.datos.pagina = b.pagina;
+    const y = window.scrollY;
+    pintar();
+    window.scrollTo(0, y);
+  } catch (e) {
+    btn.disabled = false;
+    toast(e.message);
+  }
+}
+
+function pantallaBitacora({ filas = [], hay_mas, grupos = [] }) {
+  if (!['admin', 'impuestos'].includes(rol())) return '<div class="card flat empty">Solo Administración e Impuestos ven la bitácora general.</div>';
+  const f = ui.bitf || {};
+  const sel = (v, x) => (v === x ? 'selected' : '');
+  const linea = (l) => `<li><div>${esc(l.accion)}</div>
+      <div class="t">${fmt(l.ts)} · ${esc(l.usuario_nombre)} (${esc(l.rol)})</div>
+      ${l.grupos || l.expedientes ? `<div class="t">${l.grupos ? `<a href="#/grupos/${l.grupo_id}">${esc(l.grupos.nombre)}</a>` : ''}${l.expedientes ? ` · <a href="#/expedientes/${l.expediente_id}">${folioExp(l.expedientes.folio)} ${esc(l.expedientes.nombre)} ${esc(l.expedientes.apellidos)}</a>` : ''}</div>` : ''}
+      ${l.motivo ? `<span class="m">Motivo: ${esc(l.motivo)}</span>` : ''}</li>`;
+  const hayFiltro = Object.values(f).some((v) => v);
+  return `<section class="page-head"><div><p class="eyebrow">Auditoría</p><h1>Bitácora <span class="hl">general</span></h1>
+      <p class="lead">Todos los movimientos de todos los grupos, del más reciente al más antiguo. Nada de esto se puede editar ni borrar.</p></div>
+      <a class="btn" href="/api/bitacora/excel?${consultaBitacora()}" data-descarga>Descargar en Excel</a></section>
+    <div class="stack">
+      <form class="card flat filtros" data-form="bitacora">
+        <div class="field"><label for="bf-desde">Desde</label><input type="date" id="bf-desde" value="${esc(f.desde || '')}"></div>
+        <div class="field"><label for="bf-hasta">Hasta</label><input type="date" id="bf-hasta" value="${esc(f.hasta || '')}"></div>
+        <div class="field"><label for="bf-area">Área</label><select id="bf-area"><option value="">Todas</option>${AREAS.map((a) => `<option ${sel(f.area, a)}>${a}</option>`).join('')}</select></div>
+        <div class="field"><label for="bf-grupo">Grupo</label><select id="bf-grupo"><option value="">Todos</option>${grupos.map((g) => `<option value="${g.id}" ${sel(f.grupo, g.id)}>${esc(g.nombre)}</option>`).join('')}</select></div>
+        <div class="field"><label for="bf-persona">Persona</label><input type="text" id="bf-persona" maxlength="60" value="${esc(f.persona || '')}" placeholder="Nombre o parte del nombre"></div>
+        <div class="field"><label for="bf-texto">Acción</label><input type="text" id="bf-texto" maxlength="60" value="${esc(f.texto || '')}" placeholder="Ej. Cerró, recaptura, factura"></div>
+        <div class="row end full">${hayFiltro ? '<button type="button" class="btn" data-a="bit-limpiar">Quitar filtros</button>' : ''}<button type="submit" class="btn primary">Buscar</button></div>
+      </form>
+      <div class="card flat stack">
+        ${filas.length ? `<ol class="log">${filas.map(linea).join('')}</ol>` : `<p class="muted">${hayFiltro ? 'Ningún movimiento con estos filtros.' : 'Sin movimientos todavía.'}</p>`}
+        ${hay_mas ? '<div class="center"><button class="btn" data-a="bit-mas">Ver más movimientos</button></div>' : ''}
+      </div>
+    </div>`;
+}
+
+// ------------------------------------------------------------------ expediente para imprimir (etapa 5)
+function pantallaImprimir({ expediente: e, grupo: g, documentos = [], bitacora = [] }) {
+  const ultimos = FILE_ORDER.map((t) => documentos.filter((d) => d.tipo === t).sort((a, b) => b.version - a.version)[0]).filter(Boolean);
+  const hojas = ultimos.map((d) => `<section class="hoja">
+      <div class="hoja-t"><b>${DOCS[d.tipo].label}${d.tipo === 'fmm' && d.fmm_tipo ? ` · ${esc(FMM_TIPOS[d.fmm_tipo] || d.fmm_tipo)}` : ''}</b>
+        <span>${folioExp(e.folio)} · ${esc(e.nombre)} ${esc(e.apellidos)} · versión ${d.version} · ${fmt(d.capturado_en)}</span></div>
+      <img src="/api/documentos/${d.id}/imagen" alt="${DOCS[d.tipo].label}"></section>`).join('');
+  return `<div class="print-bar no-print"><a class="btn" href="#/expedientes/${e.id}">Volver al expediente</a>
+      <span class="note">Una hoja por documento, en el orden del archivo físico. Se imprime la versión vigente de cada uno.</span>
+      <button class="btn primary" data-a="imprimir">Imprimir</button></div>
+    <div class="impreso">
+      <section class="hoja portada">
+        <p class="eyebrow">Expediente tax free · Fairmont Mayakoba</p>
+        <h1>${esc(e.nombre)} ${esc(e.apellidos)}</h1>
+        <dl class="kv">
+          <dt>Expediente</dt><dd class="mono">${folioExp(e.folio)}</dd>
+          <dt>Estado</dt><dd>${ESTADOS[e.estado]}</dd>
+          <dt>Nacionalidad</dt><dd>${esc(e.nacionalidad)}</dd>
+          <dt>Pasaporte</dt><dd class="mono">${esc(e.pasaporte || 'Sin capturar')}</dd>
+          <dt>Vence</dt><dd>${e.pasaporte_vence ? dateTxt(e.pasaporte_vence) : 'Sin registrar'}</dd>
+          <dt>Grupo</dt><dd>${esc(g.nombre)} <span class="mono">(${esc(g.codigo_opera || folioGrupo(g.folio))})</span></dd>
+          <dt>Estancia del grupo</dt><dd>${dateTxt(g.llegada)} al ${dateTxt(g.salida)}</dd>
+          <dt>Documentos</dt><dd>${ultimos.map((d) => DOCS[d.tipo].label).join(', ') || 'Ninguno'}</dd>
+        </dl>
+        <h3>Bitácora</h3>
+        <table class="bit-imp"><tbody>${bitacora.slice().reverse().map((l) => `<tr><td class="num">${fmt(l.ts)}</td><td>${esc(l.usuario_nombre)} (${esc(l.rol)})</td><td>${esc(l.accion)}${l.motivo ? `<br><i>Motivo: ${esc(l.motivo)}</i>` : ''}</td></tr>`).join('')}</tbody></table>
+        <p class="note">Impreso por ${esc(state.perfil.nombre)} el ${fmt(new Date().toISOString())}.</p>
+      </section>
+      ${hojas}
+    </div>`;
 }
 
 // ------------------------------------------------------------------ usuarios (Administración)
@@ -796,6 +943,20 @@ document.addEventListener('click', (ev) => {
     case 'miclave':
       abrirModal({ kind: 'miclave' });
       break;
+    case 'av-solo':
+      ui.avSolo = el.checked;
+      pintar();
+      break;
+    case 'bit-mas':
+      masBitacora(el);
+      break;
+    case 'bit-limpiar':
+      ui.bitf = {};
+      recargar(false);
+      break;
+    case 'imprimir':
+      window.print();
+      break;
     case 'gen-clave': {
       const inp = document.getElementById(d.t);
       if (inp) inp.value = generarClave();
@@ -825,6 +986,11 @@ document.addEventListener('submit', (ev) => {
   if (f.dataset.form === 'riesgo') enviarGrupo(f, 'riesgo', { nivel: state.modal.k, nota: f.querySelector('#ri-nota').value.trim() }, 'Riesgo registrado.');
   if (f.dataset.form === 'vence') enviarVence(f);
   if (f.dataset.form === 'miclave') enviarMiClave(f);
+  if (f.dataset.form === 'bitacora') {
+    const v = (id) => f.querySelector(id).value.trim();
+    ui.bitf = { desde: v('#bf-desde'), hasta: v('#bf-hasta'), area: v('#bf-area'), grupo: v('#bf-grupo'), persona: v('#bf-persona'), texto: v('#bf-texto') };
+    recargar(false);
+  }
   if (f.dataset.form === 'usr-nuevo') {
     enviarUsuario(f, '/api/usuarios', {
       nombre: f.querySelector('#un-nombre').value.trim(), email: f.querySelector('#un-email').value.trim(),

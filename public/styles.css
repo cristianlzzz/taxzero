@@ -313,3 +313,36 @@ a.btn{text-decoration:none}
 input[type=password]{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line-2);border-radius:6px;padding:7px 12px;width:100%}
 tr.inactivo td{color:var(--muted)}
 a.tab{text-decoration:none}
+
+/* Etapa 5: avance, bitácora general e impresión */
+td .sub.detenido{color:var(--warn-fg);font-weight:500;margin-top:4px}
+table.avance th .sub{display:block;font-size:11px;font-weight:400;color:var(--muted)}
+table.avance td.ok{font-weight:600}
+table.avance td.alerta{color:var(--warn-fg);font-weight:600;background:var(--warn-bg)}
+table.avance tfoot td{font-weight:600;border-top:1px solid var(--line-2)}
+.check-inline{display:inline-flex;align-items:center;gap:8px;font-size:14px;cursor:pointer}
+.filtros{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.filtros .full{grid-column:1/-1}
+@media (max-width:760px){.filtros{grid-template-columns:1fr}}
+.log .t a{color:var(--hl)}
+.print-bar{display:flex;align-items:center;gap:16px;justify-content:space-between;flex-wrap:wrap;margin:8px 0 20px}
+.impreso{display:flex;flex-direction:column;gap:24px}
+.hoja{background:#fff;color:#0c0a09;border:1px solid var(--line);border-radius:12px;padding:32px}
+.hoja .eyebrow,.hoja .note{color:#57534e}
+.hoja h1{margin:4px 0 20px}
+.hoja .kv{margin-bottom:24px}
+.hoja-t{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-size:13px;margin-bottom:12px;border-bottom:1px solid #d6d3d1;padding-bottom:8px}
+.hoja img{display:block;max-width:100%;max-height:85vh;margin:0 auto;object-fit:contain}
+.bit-imp{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px}
+.bit-imp td{border-bottom:1px solid #e7e5e4;padding:6px 8px;vertical-align:top;text-align:left}
+.bit-imp td:first-child{white-space:nowrap}
+@media print{
+  @page{size:letter;margin:12mm}
+  body{background:#fff !important}
+  header.top,.no-print,.toast{display:none !important}
+  main.wrap{max-width:none;padding:0;margin:0}
+  .impreso{gap:0}
+  .hoja{border:0;border-radius:0;padding:0;break-after:page;page-break-after:always}
+  .hoja:last-child{break-after:auto;page-break-after:auto}
+  .hoja img{max-height:235mm}
+}
