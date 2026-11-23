@@ -90,7 +90,7 @@ export async function salir() {
 
 // ------------------------------------------------------------------ aviso de privacidad
 const borradorHTML = () =>
-  AVISO_BORRADOR ? '<p class="notice"><b>Borrador pendiente de validación del área legal.</b> Lo resaltado falta confirmarlo.</p>' : '';
+  AVISO_BORRADOR ? '<p class="notice"><b>Borrador pendiente de validación del área legal.</b></p>' : '';
 
 export function avisoIntegralHTML() {
   return ['es', 'en'].map((l) => {
