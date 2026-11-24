@@ -167,6 +167,15 @@ O conecta este repositorio en Cloudflare (Workers → Create → Import a reposi
   huéspedes, códigos QR ni fotos nuevas mientras siga cancelado. Cada cancelación o reactivación queda en
   `cancelaciones_grupo` y en la bitácora del grupo (migración 0014).
 
+## Impresión de expedientes
+
+- Cada expediente se imprime (o se guarda en PDF desde la ventana de impresión) con una portada y una hoja por
+  documento vigente, en el orden del archivo físico. La bitácora ya no se imprime: se consulta en la página.
+- Impuestos y Administración pueden imprimir los expedientes de **todo el grupo** en un solo documento
+  (`#/grupos/:id/imprimir`): portada con la lista de huéspedes y luego cada expediente, por apellido. Se puede
+  limitar a solo expedientes cerrados. El botón se activa cuando ya cargaron todas las fotos. Generarlo queda
+  en la bitácora del grupo (migración 0015).
+
 ## Documentos de Crédito por grupo
 
 - En la ficha del grupo, Crédito sube la autorización de la devolución (firmada por Impuestos y Cuentas por Cobrar),

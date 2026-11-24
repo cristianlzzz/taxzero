@@ -559,6 +559,35 @@ app.post('/api/expedientes/:id/codigo', async (c) => {
   return c.json({ codigo });
 });
 
+// Expedientes de todo el grupo para imprimir o guardar en un solo PDF (Impuestos y Administración).
+// Trae la versión vigente de cada documento; las fotos se piden aparte, una por una.
+app.get('/api/grupos/:id/impresion', async (c) => {
+  exigir(c, 'impuestos', 'admin');
+  const id = uuid(c.req.param('id'));
+  const db = c.get('db');
+  const [grupo] = await db.select(`grupos?id=eq.${id}&select=id,folio,nombre,empresa,codigo_opera,llegada,salida`);
+  if (!grupo) throw new ErrorApi(404, 'El grupo no existe.');
+  const expedientes = await db.select(
+    `expedientes?grupo_id=eq.${id}&select=id,folio,nombre,apellidos,nacionalidad,pasaporte,pasaporte_vence,estado&order=apellidos.asc,nombre.asc`,
+  );
+  let documentos: any[] = [];
+  const ids = expedientes.map((e: any) => e.id);
+  // En bloques para no armar URLs enormes en grupos de 500 huéspedes.
+  for (let i = 0; i < ids.length; i += 150) {
+    const lote = ids.slice(i, i + 150).join(',');
+    documentos = documentos.concat(await db.select(
+      `documentos?expediente_id=in.(${lote})&select=id,expediente_id,tipo,version,fmm_tipo,capturado_en&order=version.desc`,
+    ));
+  }
+  const vigentes = new Map<string, any>();
+  for (const d of documentos) {
+    const k = `${d.expediente_id}|${d.tipo}`;
+    if (!vigentes.has(k)) vigentes.set(k, d);
+  }
+  await db.rpc('anotar_descarga', { p_grupo: id, p_que: 'pdf' });
+  return c.json({ grupo, expedientes, documentos: [...vigentes.values()] });
+});
+
 app.get('/api/documentos/:id/imagen', async (c) => {
   exigir(c, ...PC);
   const id = uuid(c.req.param('id'));

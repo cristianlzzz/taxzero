@@ -567,6 +567,29 @@ const leerExcel = (f) => execFileSync('python3', ['-I', '-c',
   ok(!(await page.isVisible('header.top')), 'Al imprimir no sale el menú de la página');
   await page.pdf({ path: `${OUT}/20-expediente-impreso.pdf`, format: 'Letter' });
   await page.emulateMedia({ media: 'screen' });
+  ok(!(await page.isVisible('.portada >> text=Bitácora')), 'El expediente impreso ya no incluye la bitácora');
+
+  // Expedientes de todo el grupo en un solo documento.
+  await page.click('a:has-text("Volver al expediente")');
+  await page.click(`.crumbs a:has-text("${nombreGrupo}")`);
+  await page.click('a:has-text("Imprimir expedientes del grupo")');
+  await page.waitForSelector('.impreso .portada h1');
+  await page.waitForSelector('#imp-btn:not([disabled])', { timeout: 60000 });
+  const portadas = await page.locator('.impreso .portada').count();
+  ok(portadas >= 2 && (await page.isVisible('.impreso .portada >> text=Carter, Emily')), `El PDF del grupo trae la portada del grupo y un expediente por huésped (${portadas - 1})`);
+  ok(!(await page.isVisible('.impreso >> text=Bitácora')), 'El PDF del grupo no incluye la bitácora');
+  ok((await page.textContent('#imp-estado')).includes('listas') || (await page.textContent('#imp-estado')).includes('lista'), `Fotos cargadas antes de imprimir (${await page.textContent('#imp-estado')})`);
+  await page.selectOption('#imp-solo', 'cerrado');
+  const cerrados = await page.locator('.impreso .portada').count() - 1;
+  ok(cerrados >= 1 && cerrados <= portadas - 1, `Filtro de solo cerrados (${cerrados})`);
+  await page.selectOption('#imp-solo', '');
+  await page.waitForSelector('#imp-btn:not([disabled])', { timeout: 60000 });
+  await page.emulateMedia({ media: 'print' });
+  await page.pdf({ path: `${OUT}/20b-grupo-impreso.pdf`, format: 'Letter' });
+  await page.emulateMedia({ media: 'screen' });
+  await page.goto(`${BASE}/#/grupos/${page.url().split('/grupos/')[1].split('/')[0]}`);
+  await page.waitForSelector('text=Generó el PDF con los expedientes de todo el grupo');
+  ok(true, 'Generar el PDF del grupo queda en la bitácora del grupo');
 
   // Bitácora general con filtros y Excel.
   await page.click('a.tab:has-text("Bitácora")');
