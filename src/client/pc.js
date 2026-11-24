@@ -591,7 +591,7 @@ function pantallaExpediente({ expediente: e, grupo: g, documentos, bitacora, cod
           <dt>Grupo</dt><dd class="mono">${esc(g.codigo_opera || folioGrupo(g.folio))}</dd>
         </dl>
         ${e.pasaporte_vence && e.pasaporte_vence < g.salida ? '<div class="notice">El pasaporte vence antes de la salida del grupo. Revisa que estuviera vigente en las fechas de la estancia.</div>' : ''}
-        ${puedeVence(e) ? `<button class="btn sm" data-a="vence">${e.pasaporte_vence ? 'Corregir vencimiento' : 'Registrar vencimiento del pasaporte'}</button>` : ''}</div>
+        ${puedeVence(e) ? `<div class="row"><button class="btn sm" data-a="edithues">Corregir datos del huésped</button><button class="btn sm" data-a="vence">${e.pasaporte_vence ? 'Corregir vencimiento' : 'Registrar vencimiento del pasaporte'}</button></div>` : ''}</div>
         <div class="card stack"><div class="row space-between"><h3>Bitácora</h3><span class="note">No se puede editar ni borrar</span></div><ol class="log">${log}</ol></div>
       </aside></div>`;
 }
@@ -1021,6 +1021,21 @@ function modalHTML() {
       <p class="err" id="ri-err" hidden></p>
       <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Registrar</button></div></form>`;
   }
+  if (m.kind === 'edithues') {
+    const e = vista.datos.expediente;
+    inner = `<form class="modal" data-form="edithues" novalidate><h2>Corregir datos del huésped</h2><p class="muted">${esc(e.nombre)} ${esc(e.apellidos)} · <span class="mono">${folioExp(e.folio)}</span></p>
+      <div class="fgrid">
+        <div class="field"><label for="eh-nom">Nombre(s)</label><input type="text" id="eh-nom" maxlength="120" required autocomplete="off" value="${esc(e.nombre)}"></div>
+        <div class="field"><label for="eh-ape">Apellidos</label><input type="text" id="eh-ape" maxlength="120" required autocomplete="off" value="${esc(e.apellidos)}"></div>
+        <div class="field"><label for="eh-nac">Nacionalidad</label><select id="eh-nac" required>${opcionesPaises().replace(`value="${e.nacionalidad_codigo}"`, `value="${e.nacionalidad_codigo}" selected`)}</select>
+          <span class="note" id="eh-nac-mx" ${e.nacionalidad_codigo === 'MEX' ? '' : 'hidden'}>Los huéspedes de nacionalidad mexicana no aplican para tax free.</span></div>
+        <div class="field"><label for="eh-pas">No. de pasaporte <span class="muted">(opcional)</span></label><input type="text" id="eh-pas" maxlength="30" autocomplete="off" value="${esc(e.pasaporte || '')}"></div>
+        <div class="field full"><label for="eh-motivo">Motivo del cambio</label><input type="text" id="eh-motivo" required maxlength="500" placeholder="Ej. Se importó mal; el pasaporte dice Michael James"></div>
+      </div>
+      <p class="note">Escribe el nombre tal como aparece en el pasaporte. Cada dato que cambies queda en la bitácora del expediente con el valor anterior, el nuevo, tu nombre y el motivo.</p>
+      <p class="err" id="eh-err" hidden></p>
+      <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Guardar cambios</button></div></form>`;
+  }
   if (m.kind === 'vence') {
     const e = vista.datos.expediente;
     inner = `<form class="modal" data-form="vence" novalidate><h2>Vencimiento del pasaporte</h2><p class="muted">${esc(e.nombre)} ${esc(e.apellidos)} · <span class="mono">${folioExp(e.folio)}</span></p>
@@ -1214,6 +1229,9 @@ document.addEventListener('click', (ev) => {
     case 'vence':
       abrirModal({ kind: 'vence' });
       break;
+    case 'edithues':
+      abrirModal({ kind: 'edithues' });
+      break;
     case 'usr-nuevo':
       abrirModal({ kind: 'usr-nuevo' });
       break;
@@ -1273,6 +1291,7 @@ document.addEventListener('submit', (ev) => {
   if (f.dataset.form === 'doc-extra') enviarDocExtra(f);
   if (f.dataset.form === 'riesgo') enviarGrupo(f, 'riesgo', { nivel: state.modal.k, nota: f.querySelector('#ri-nota').value.trim() }, 'Riesgo registrado.');
   if (f.dataset.form === 'vence') enviarVence(f);
+  if (f.dataset.form === 'edithues') enviarEdicionHuesped(f);
   if (f.dataset.form === 'miclave') enviarMiClave(f);
   if (f.dataset.form === 'bitacora') {
     const v = (id) => f.querySelector(id).value.trim();
@@ -1322,6 +1341,10 @@ document.addEventListener('change', (ev) => {
   if (ev.target.id === 'imp-solo') {
     ui.impSolo = ev.target.value;
     pintar();
+  }
+  if (ev.target.id === 'eh-nac') {
+    const n = document.getElementById('eh-nac-mx');
+    if (n) n.hidden = ev.target.value !== 'MEX';
   }
   if (ev.target.id === 'h-nac') {
     const n = document.getElementById('h-nac-mx');
@@ -1501,6 +1524,31 @@ async function enviarEvento(f) {
   } catch (e) {
     err.hidden = false;
     err.textContent = e.message;
+    btn.disabled = false;
+  }
+}
+
+async function enviarEdicionHuesped(f) {
+  const v = (id) => f.querySelector('#' + id).value.trim();
+  const err = f.querySelector('#eh-err');
+  const pais = PAISES.find((p) => p[1] === v('eh-nac'));
+  const falla = (m) => {
+    err.hidden = false;
+    err.textContent = m;
+  };
+  if (!v('eh-nom') || !v('eh-ape') || !pais) return falla('Escribe el nombre, los apellidos y elige la nacionalidad.');
+  if (v('eh-motivo').length < 3) return falla('Escribe el motivo del cambio.');
+  const btn = f.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    const { cambios } = await api('POST', `/api/expedientes/${vista.datos.expediente.id}/datos`, {
+      nombre: v('eh-nom'), apellidos: v('eh-ape'), nacionalidad_codigo: pais[1], nacionalidad: pais[0], pasaporte: v('eh-pas'), motivo: v('eh-motivo'),
+    });
+    state.modal = null;
+    toast(cambios === 1 ? 'Dato corregido.' : `${cambios} datos corregidos.`);
+    recargar();
+  } catch (e) {
+    falla(e.message);
     btn.disabled = false;
   }
 }

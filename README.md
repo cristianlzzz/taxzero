@@ -77,6 +77,13 @@ información, y nada se borra.
 - No se guardan número de habitación ni número de reservación. Cada alta queda en la bitácora con el nombre del archivo,
   y la importación en la bitácora del grupo. Si una fila falla, no entra ninguna.
 
+## Corregir datos del huésped
+
+- En el expediente, **Corregir datos del huésped** (Front Desk, Grupos y Administración): nombre, apellidos,
+  nacionalidad y número de pasaporte, con motivo obligatorio.
+- Mientras el expediente no haya pasado la revisión de Grupos. Después, Crédito o Impuestos lo devuelven a Grupos.
+- Cada dato que cambia queda en la bitácora del expediente con el valor anterior y el nuevo.
+
 Pendiente: aviso de privacidad, respaldo nocturno y contraseñas definitivas antes de usar datos reales.
 
 ## Cómo está hecho
