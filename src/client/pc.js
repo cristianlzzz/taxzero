@@ -93,6 +93,13 @@ function pintar() {
   else body = pantallaGrupos(vista.datos);
   root.innerHTML = `${header()}<main class="wrap">${body}</main>${PIE()}${modalHTML()}`;
   if (vista.datos && vista.ruta.s === 'imprimirgrupo') seguirCargaFotos();
+  // El navegador propone el título de la página como nombre del PDF al guardar:
+  // el código del grupo para el expediente grupal y el nombre del huésped para el individual.
+  const d = vista.datos;
+  document.title = !d || vista.error ? 'TaxZero'
+    : vista.ruta.s === 'imprimirgrupo' ? (d.grupo.codigo_opera || folioGrupo(d.grupo.folio))
+    : vista.ruta.s === 'imprimir' ? `${d.expediente.nombre} ${d.expediente.apellidos}`
+    : 'TaxZero';
 }
 
 // ------------------------------------------------------------------ piezas
