@@ -15,6 +15,12 @@ export function fmt(iso) {
   return `${+p.day} ${MES[+p.month - 1]} ${p.year}, ${p.hour}:${p.minute}`;
 }
 
+// Fecha de hoy (AAAA-MM-DD) en el hotel, sin importar la zona del equipo.
+export const hoyHotel = () => new Date().toLocaleDateString('en-CA', { timeZone: ZONA });
+
+// Días entre dos fechas AAAA-MM-DD (b - a).
+export const diasEntre = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
+
 export function dateTxt(iso) {
   if (!iso) return '';
   const [y, m, d] = iso.slice(0, 10).split('-');

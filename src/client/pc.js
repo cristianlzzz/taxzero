@@ -4,13 +4,13 @@ import {
   CHECKS, CHECK_GRUPO, ROLES, DOCS, DOCS_GRUPO, DOC_ORDER, ESTADOS, FILE_ORDER, FMM_TIPOS, MOTIVOS, PAISES, PAISES_FREC, QUEUE, QUEUE_WORD,
   RIESGOS, TIPOS_EVENTO,
 } from './catalogos.js';
-import { api, dateTxt, esc, fmt, folioExp, folioGrupo, mmss } from './util.js';
+import { api, dateTxt, diasEntre, esc, fmt, folioExp, folioGrupo, hoyHotel, mmss } from './util.js';
 import { header, state, toast } from './main.js';
 
 let root;
 let vista = null; // { ruta, datos, error }
 let carga = 0;
-const ui = { filtro: {}, ver: {}, checks: {} };
+const ui = { filtro: {}, ver: {}, checks: {}, tablero: null, buscar: '' };
 
 const rol = () => state.perfil.rol;
 const cola = () => QUEUE[rol()] || [];
@@ -63,7 +63,11 @@ function cargar(ruta) {
   if (ruta.s === 'grupo') return api('GET', `/api/grupos/${ruta.id}`);
   if (ruta.s === 'exp') return api('GET', `/api/expedientes/${ruta.id}`);
   if (ruta.s === 'usuarios') return api('GET', '/api/usuarios');
-  if (ruta.s === 'avance') return api('GET', '/api/grupos');
+  if (ruta.s === 'avance') {
+    // Front Desk no tiene acceso al reporte de Avance (el servidor tampoco le entrega esos datos).
+    if (rol() === 'frontdesk') return Promise.reject(new Error('Tu área no tiene acceso a esta sección.'));
+    return api('GET', '/api/grupos');
+  }
   if (ruta.s === 'imprimir') return api('GET', `/api/expedientes/${ruta.id}`);
   if (ruta.s === 'bitacora') return cargarBitacora();
   return Promise.resolve({});
@@ -110,24 +114,81 @@ const ENCABEZADOS = {
 };
 
 // ------------------------------------------------------------------ lista de grupos
+// Tablero por etapa de la estancia, según las fechas oficiales y la fecha de hoy en el hotel.
+const ETAPAS = [
+  ['casa', 'En casa', 'Grupos hospedados hoy: ya llegaron y aún no llega su salida oficial.'],
+  ['llegar', 'Por llegar', 'Grupos con llegada oficial después de hoy, del más próximo al más lejano.'],
+  ['salieron', 'Ya salieron', 'Grupos cuya salida oficial ya pasó. Aquí se terminan de revisar y cerrar sus expedientes.'],
+  ['todos', 'Todos', 'Todos los grupos, del más reciente al más antiguo.'],
+];
+
+function etapaGrupo(g, hoy) {
+  if (g.llegada > hoy) return 'llegar';
+  if (g.salida < hoy) return 'salieron';
+  return 'casa';
+}
+
+function cuandoTxt(g, hoy) {
+  const et = etapaGrupo(g, hoy);
+  const d = (n, uno, hoyTxt, fut, pas) => (n === 0 ? hoyTxt : n === 1 ? uno : n > 0 ? fut.replace('#', n) : pas.replace('#', -n));
+  if (et === 'llegar') return d(diasEntre(hoy, g.llegada), 'Llega mañana', 'Llega hoy', 'Llega en # días', '');
+  if (et === 'casa') return `En casa · ${d(diasEntre(hoy, g.salida), 'sale mañana', 'sale hoy', 'sale en # días', '')}`;
+  const n = diasEntre(g.salida, hoy);
+  return n === 1 ? 'Salió ayer' : `Salió hace ${n} días`;
+}
+
+const ORDEN_ETAPA = {
+  casa: (a, b) => a.salida.localeCompare(b.salida),
+  llegar: (a, b) => a.llegada.localeCompare(b.llegada),
+  salieron: (a, b) => b.salida.localeCompare(a.salida),
+  todos: (a, b) => b.llegada.localeCompare(a.llegada),
+};
+
+const normal = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
 function pantallaGrupos({ grupos }) {
   const [eyebrow, titulo, lead] = ENCABEZADOS[rol()];
   const puedeAlta = ['grupos', 'admin'].includes(rol());
-  const cards = grupos
+  const hoy = hoyHotel();
+  const q = normal(ui.buscar.trim());
+  const buscados = q ? grupos.filter((g) => normal(`${g.nombre} ${g.empresa} ${g.codigo_opera || ''} ${folioGrupo(g.folio)}`).includes(q)) : grupos;
+  const por = { casa: [], llegar: [], salieron: [], todos: buscados };
+  buscados.forEach((g) => por[etapaGrupo(g, hoy)].push(g));
+  // Al entrar se abre la primera etapa que tenga grupos (normalmente En casa).
+  if (!ui.tablero) ui.tablero = ['casa', 'llegar', 'salieron'].find((k) => por[k].length) || 'casa';
+  const et = ui.tablero;
+  const lista = por[et].slice().sort(ORDEN_ETAPA[et]);
+  const cards = lista
     .map((g) => {
       const c = g.conteo || {};
-      const q = cola().reduce((s, k) => s + (c[k] || 0), 0);
+      const n = cola().reduce((s, k) => s + (c[k] || 0), 0);
       const counts = Object.keys(ESTADOS).filter((k) => c[k]);
+      const total = Object.values(c).reduce((s, v) => s + v, 0);
+      const abiertos = total - (c.cerrado || 0) - (c.no_aplica || 0);
+      const etapa = etapaGrupo(g, hoy);
+      const pend = etapa === 'salieron' && total
+        ? `<span class="note">${abiertos ? `${abiertos} ${abiertos === 1 ? 'expediente' : 'expedientes'} sin cerrar` : 'Todos los expedientes cerrados'}</span>`
+        : '';
       return `<a class="gcard" href="#/grupos/${g.id}">
-        <span class="queue ${q ? '' : 'zero'} num">${q} ${QUEUE_WORD[rol()]}</span>
-        <div><h2>${esc(g.nombre)}</h2><div class="meta"><span class="mono">${esc(g.codigo_opera || folioGrupo(g.folio))}</span> · ${dateTxt(g.llegada)} al ${dateTxt(g.salida)}</div></div>
+        <div class="row space-between gcard-top"><span class="queue ${n ? '' : 'zero'} num">${n} ${QUEUE_WORD[rol()]}</span><span class="etapa e-${etapa}">${cuandoTxt(g, hoy)}</span></div>
+        <div><h2>${esc(g.nombre)}</h2><div class="meta">${esc(g.empresa)}</div><div class="meta"><span class="mono">${esc(g.codigo_opera || folioGrupo(g.folio))}</span> · ${dateTxt(g.llegada)} al ${dateTxt(g.salida)}</div></div>
         <div class="counts">${counts.length ? counts.map((k) => `<span class="pill ${cola().includes(k) ? 'mine' : ''}">${ESTADOS[k]} <b class="num">${c[k]}</b></span>`).join('') : '<span class="muted">Aún sin huéspedes</span>'}</div>
+        ${pend}
       </a>`;
     })
     .join('');
+  const vacio = q
+    ? `Ningún grupo de "${esc(ui.buscar.trim())}" en ${ETAPAS.find((x) => x[0] === et)[1].toLowerCase()}.`
+    : { casa: 'No hay grupos hospedados hoy.', llegar: 'No hay grupos por llegar.', salieron: 'Ningún grupo ha salido todavía.', todos: 'Todavía no hay grupos.' }[et]
+      + (et !== 'salieron' && !grupos.length ? (puedeAlta ? ' Da de alta el primero con el botón de arriba.' : ' Grupos los da de alta desde su PC.') : '');
   return `<section class="page-head"><div><p class="eyebrow">${eyebrow}</p><h1>${titulo}</h1><p class="lead">${lead}</p></div>
       <div class="row">${puedeAlta ? '<a class="btn primary" href="#/grupos/nuevo">Dar de alta un grupo</a>' : ''}</div></section>
-    ${grupos.length ? `<div class="ggrid">${cards}</div>` : `<div class="card flat empty">Todavía no hay grupos. ${puedeAlta ? 'Da de alta el primero con el botón de arriba.' : 'Grupos los da de alta desde su PC.'}</div>`}`;
+    <div class="tablero-bar">
+      <div class="seg" role="tablist" aria-label="Etapa de la estancia">${ETAPAS.map(([k, l]) => `<button class="tab" role="tab" data-a="etapa" data-k="${k}" aria-selected="${et === k}">${l} <span class="num">${por[k].length}</span></button>`).join('')}</div>
+      <input type="search" id="g-buscar" class="buscar" placeholder="Buscar grupo, empresa o código" value="${esc(ui.buscar)}" aria-label="Buscar grupo" autocomplete="off">
+    </div>
+    <p class="note tablero-nota">${ETAPAS.find((x) => x[0] === et)[2]}</p>
+    ${lista.length ? `<div class="ggrid">${cards}</div>` : `<div class="card flat empty">${vacio}</div>`}`;
 }
 
 // ------------------------------------------------------------------ alta de grupo
@@ -135,13 +196,13 @@ function altaGrupo() {
   if (!['grupos', 'admin'].includes(rol())) return '<div class="card flat empty">Solo Grupos puede dar de alta grupos.</div>';
   return `${crumbs([{ t: 'Grupos', href: '#/' }, { t: 'Alta de grupo' }])}
     <section class="page-head"><div><p class="eyebrow">Grupos</p><h1>Dar de alta un <span class="hl">grupo</span></h1><p class="lead">Front Desk da de alta a los huéspedes desde su PC una vez creado el grupo.</p></div></section>
-    <form class="card stack max-820" data-form="alta">
+    <form class="card stack max-820" data-form="alta" novalidate>
       <div class="fgrid">
         <div class="field full"><label for="a-nombre">Nombre del grupo</label><input type="text" id="a-nombre" required maxlength="200" placeholder="Ej. Congreso Anual Woodgrove 2027"></div>
         <div class="field"><label for="a-empresa">Empresa</label><input type="text" id="a-empresa" required maxlength="200"></div>
         <div class="field"><label for="a-contacto">Contacto del grupo</label><input type="text" id="a-contacto" maxlength="200" placeholder="Nombre y cargo"></div>
-        <div class="field"><label for="a-llegada">Llegada oficial</label><input type="date" id="a-llegada" required></div>
-        <div class="field"><label for="a-salida">Salida oficial</label><input type="date" id="a-salida" required></div>
+        <div class="field"><label for="a-llegada">Llegada oficial</label><input type="date" id="a-llegada" required min="${hoyHotel()}"></div>
+        <div class="field"><label for="a-salida">Salida oficial</label><input type="date" id="a-salida" required min="${hoyHotel()}"></div>
         <div class="field"><label for="a-est">Huéspedes estimados</label><input type="number" id="a-est" min="1" max="5000" placeholder="Ej. 450"></div>
         <div class="field"><label for="a-codigo">Código de grupo en Opera</label><input type="text" id="a-codigo" maxlength="60" placeholder="Ej. GRP-1401-WGB"></div>
       </div>
@@ -179,6 +240,7 @@ async function enviarAlta(f) {
   };
   let msg = '';
   if (!datos.nombre || !datos.empresa || !datos.llegada || !datos.salida) msg = 'Llena nombre, empresa, llegada y salida.';
+  else if (datos.llegada < hoyHotel()) msg = 'La llegada no puede ser anterior a hoy.';
   else if (datos.salida < datos.llegada) msg = 'La salida no puede ser antes de la llegada.';
   else if (!datos.evento.tipo || datos.evento.organizador.length < 2) msg = 'Elige el tipo de evento y escribe el organizador.';
   if (msg) {
@@ -207,6 +269,8 @@ function pantallaGrupo(datos) {
   const f = ui.filtro[clave] || 'todos';
   const presentes = Object.keys(ESTADOS).filter((k) => expedientes.some((e) => e.estado === k));
   const enCola = (e) => cola().includes(e.estado);
+  // Los expedientes detenidos son parte del reporte de Avance, que Front Desk no ve.
+  const detenido = (e) => rol() !== 'frontdesk' && esDetenido(e);
   const mostrados = expedientes
     .filter((e) => f === 'todos' || (f === 'mios' ? enCola(e) : f === 'detenidos' ? detenido(e) : e.estado === f))
     .sort((a, b) => enCola(b) - enCola(a) || (b.actualizado_en > a.actualizado_en ? 1 : -1));
@@ -232,12 +296,13 @@ function pantallaGrupo(datos) {
       <div class="row">${rol() !== 'frontdesk' && expedientes.length ? `<a class="btn" href="/api/grupos/${g.id}/excel" data-descarga>Descargar en Excel</a>` : ''}
       ${esFD ? `<button class="btn primary" data-a="altahues">Dar de alta un huésped</button>` : ''}</div></section>
     <div class="stack">
-      <div class="card flat"><dl class="info">
+      <div class="card flat stack">${['grupos', 'admin'].includes(rol()) ? `<div class="row space-between"><h3>Datos del grupo</h3><button class="btn sm" data-a="editgrupo">Editar datos</button></div>` : ''}<dl class="info">
         <div><dt>Empresa</dt><dd>${esc(g.empresa)}</dd></div>
         <div><dt>Estancia</dt><dd>${dateTxt(g.llegada)} al ${dateTxt(g.salida)}</dd></div>
         <div><dt>Huéspedes estimados</dt><dd class="num">${g.estimados ?? '·'}</dd></div>
         <div><dt>Huéspedes dados de alta</dt><dd class="num">${expedientes.length}</dd></div>
         <div><dt>Contacto</dt><dd>${esc(g.contacto || 'Sin capturar')}</dd></div>
+        ${g.codigo_opera ? `<div><dt>Código en Opera</dt><dd class="mono">${esc(g.codigo_opera)}</dd></div>` : ''}
       </dl></div>
       ${rol() === 'frontdesk' ? '' : expedienteEvento(datos)}
       ${extraGrupo(g, montos, facturas)}
@@ -460,7 +525,7 @@ function pantallaExpediente({ expediente: e, grupo: g, documentos, bitacora, cod
 const DIAS_DETENIDO = 3;
 const FINALES = ['cerrado', 'no_aplica'];
 const diasSin = (ts) => Math.floor((Date.now() - new Date(ts).getTime()) / 86400000);
-const detenido = (e) => !FINALES.includes(e.estado) && diasSin(e.actualizado_en) >= DIAS_DETENIDO;
+const esDetenido = (e) => !FINALES.includes(e.estado) && diasSin(e.actualizado_en) >= DIAS_DETENIDO;
 
 // Columnas del avance: cada paso del flujo junta sus estados (incluye los devueltos a esa área).
 const PASOS = [
@@ -751,6 +816,30 @@ function modalHTML() {
       <p class="err" id="ev-err" hidden></p>
       <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Guardar</button></div></form>`;
   }
+  if (m.kind === 'editgrupo') {
+    const g = vista.datos.grupo;
+    const exps = vista.datos.expedientes || [];
+    const cerrados = exps.filter((e) => e.estado === 'cerrado').length;
+    const avanzados = exps.filter((e) => ['val_credito', 'rev_impuestos', 'dev_credito'].includes(e.estado)).length;
+    const fijo = cerrados ? 'disabled' : '';
+    const minLl = g.llegada > hoyHotel() ? `min="${hoyHotel()}"` : '';
+    inner = `<form class="modal wide-form" data-form="editgrupo" novalidate><h2>Editar datos del grupo</h2><p class="muted">${esc(g.nombre)} · <span class="mono">${esc(g.codigo_opera || folioGrupo(g.folio))}</span></p>
+      ${cerrados ? `<div class="notice">Este grupo ya tiene ${cerrados} ${cerrados === 1 ? 'expediente cerrado' : 'expedientes cerrados'} por Impuestos, así que la empresa y las fechas de estancia ya no se pueden cambiar. Si hay un error en ellas, Impuestos debe reabrir esos expedientes primero.</div>`
+        : avanzados ? `<div class="notice">${avanzados} ${avanzados === 1 ? 'expediente ya está' : 'expedientes ya están'} en Crédito o Impuestos. Verán el cambio en la bitácora del grupo.</div>` : ''}
+      <div class="fgrid">
+        <div class="field full"><label for="eg-nombre">Nombre del grupo</label><input type="text" id="eg-nombre" required maxlength="200" value="${esc(g.nombre)}"></div>
+        <div class="field"><label for="eg-empresa">Empresa</label><input type="text" id="eg-empresa" required maxlength="200" value="${esc(g.empresa)}" ${fijo}></div>
+        <div class="field"><label for="eg-contacto">Contacto del grupo</label><input type="text" id="eg-contacto" maxlength="200" value="${esc(g.contacto || '')}" placeholder="Nombre y cargo"></div>
+        <div class="field"><label for="eg-llegada">Llegada oficial</label><input type="date" id="eg-llegada" required value="${esc(g.llegada)}" ${minLl} ${fijo}></div>
+        <div class="field"><label for="eg-salida">Salida oficial</label><input type="date" id="eg-salida" required value="${esc(g.salida)}" ${fijo}></div>
+        <div class="field"><label for="eg-est">Huéspedes estimados</label><input type="number" id="eg-est" min="1" max="5000" value="${g.estimados ?? ''}"></div>
+        <div class="field"><label for="eg-codigo">Código de grupo en Opera</label><input type="text" id="eg-codigo" maxlength="60" value="${esc(g.codigo_opera || '')}"></div>
+        <div class="field full"><label for="eg-motivo">Motivo del cambio</label><input type="text" id="eg-motivo" required maxlength="500" placeholder="Ej. Error de captura en la empresa; contrato dice Northwind Medical Inc."></div>
+      </div>
+      <p class="note">Cada dato que cambies queda en la bitácora del grupo con el valor anterior, el nuevo, tu nombre y el motivo.</p>
+      <p class="err" id="eg-err" hidden></p>
+      <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Guardar cambios</button></div></form>`;
+  }
   if (m.kind === 'riesgo') {
     const R = RIESGOS[m.k];
     inner = `<form class="modal" data-form="riesgo" novalidate><h2>${R.label} · ${R.sub}</h2><p class="muted">${esc(vista.datos.grupo.nombre)}</p>
@@ -924,6 +1013,13 @@ document.addEventListener('click', (ev) => {
     case 'evento':
       abrirModal({ kind: 'evento' });
       break;
+    case 'editgrupo':
+      abrirModal({ kind: 'editgrupo' });
+      break;
+    case 'etapa':
+      ui.tablero = d.k;
+      pintar();
+      break;
     case 'riesgo':
       abrirModal({ kind: 'riesgo', k: d.k });
       break;
@@ -983,6 +1079,7 @@ document.addEventListener('submit', (ev) => {
   if (f.dataset.form === 'monto') enviarGrupo(f, 'monto', { valor: f.querySelector('#mo-val').value.trim(), nota: f.querySelector('#mo-nota').value.trim() }, 'Monto registrado.');
   if (f.dataset.form === 'factura') enviarGrupo(f, 'factura', { folio: f.querySelector('#fa-folio').value.trim(), tipo: f.querySelector('#fa-tipo').value }, 'Folio registrado.');
   if (f.dataset.form === 'evento') enviarEvento(f);
+  if (f.dataset.form === 'editgrupo') enviarEdicionGrupo(f);
   if (f.dataset.form === 'riesgo') enviarGrupo(f, 'riesgo', { nivel: state.modal.k, nota: f.querySelector('#ri-nota').value.trim() }, 'Riesgo registrado.');
   if (f.dataset.form === 'vence') enviarVence(f);
   if (f.dataset.form === 'miclave') enviarMiClave(f);
@@ -1034,7 +1131,19 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape' && state.modal && state.perfil?.rol !== 'ipad') cerrarModal();
 });
 
-document.addEventListener('input', validarMotivo);
+document.addEventListener('input', (ev) => {
+  validarMotivo();
+  if (ev.target.id === 'g-buscar') {
+    ui.buscar = ev.target.value;
+    const pos = ev.target.selectionStart;
+    pintar();
+    const el = document.getElementById('g-buscar');
+    if (el) {
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    }
+  }
+});
 
 const HECHO = {
   aprobar: 'Aprobado. El expediente pasó a Crédito.',
@@ -1109,6 +1218,38 @@ async function enviarGrupo(f, tipo, datos, msg) {
     await api('POST', `/api/grupos/${vista.datos.grupo.id}/${tipo}`, datos);
     state.modal = null;
     toast(msg);
+    recargar();
+  } catch (e) {
+    err.hidden = false;
+    err.textContent = e.message;
+    btn.disabled = false;
+  }
+}
+
+async function enviarEdicionGrupo(f) {
+  const v = (id) => f.querySelector('#' + id).value.trim();
+  const err = f.querySelector('#eg-err');
+  const g = vista.datos.grupo;
+  const datos = {
+    nombre: v('eg-nombre'), empresa: v('eg-empresa'), contacto: v('eg-contacto'), llegada: v('eg-llegada'),
+    salida: v('eg-salida'), estimados: v('eg-est'), codigo_opera: v('eg-codigo'), motivo: v('eg-motivo'),
+  };
+  let msg = '';
+  if (!datos.nombre || !datos.empresa || !datos.llegada || !datos.salida) msg = 'Llena nombre, empresa, llegada y salida.';
+  else if (datos.salida < datos.llegada) msg = 'La salida no puede ser antes de la llegada.';
+  else if (g.llegada > hoyHotel() && datos.llegada !== g.llegada && datos.llegada < hoyHotel()) msg = 'La llegada no puede ser anterior a hoy.';
+  else if (datos.motivo.length < 3) msg = 'Escribe el motivo del cambio.';
+  if (msg) {
+    err.hidden = false;
+    err.textContent = msg;
+    return;
+  }
+  const btn = f.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    const { cambios } = await api('POST', `/api/grupos/${g.id}/datos`, datos);
+    state.modal = null;
+    toast(cambios === 1 ? 'Dato actualizado. El cambio quedó en la bitácora.' : `${cambios} datos actualizados. Los cambios quedaron en la bitácora.`);
     recargar();
   } catch (e) {
     err.hidden = false;

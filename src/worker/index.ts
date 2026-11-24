@@ -175,13 +175,16 @@ app.post('/api/aviso', async (c) => {
 // ------------------------------------------------------------------ grupos
 app.get('/api/grupos', async (c) => {
   exigir(c, ...PC);
-  const grupos = await c.get('db').select('resumen_grupos?select=*&order=llegada.desc,creado_en.desc');
+  let grupos = await c.get('db').select('resumen_grupos?select=*&order=llegada.desc,creado_en.desc');
+  // Front Desk no ve el reporte de Avance: se le quitan los datos de expedientes detenidos.
+  if (c.get('perfil').rol === 'frontdesk') {
+    grupos = grupos.map(({ detenidos: _d, ultimo_movimiento: _u, ...g }: any) => g);
+  }
   return c.json({ grupos });
 });
 
-app.post('/api/grupos', async (c) => {
-  exigir(c, 'grupos', 'admin');
-  const b = await c.req.json().catch(() => ({}));
+// Datos generales del grupo, comunes al alta y a la edición.
+function datosGrupo(b: any) {
   const llegada = fecha(b.llegada);
   const salida = fecha(b.salida);
   if (salida < llegada) throw new ErrorApi(400, 'La salida no puede ser antes de la llegada.');
@@ -189,7 +192,7 @@ app.post('/api/grupos', async (c) => {
   if (est !== null && (!Number.isInteger(est) || est < 1 || est > 5000)) {
     throw new ErrorApi(400, 'Los huéspedes estimados deben ser un número entre 1 y 5000.');
   }
-  const id = await c.get('db').rpc<string>('crear_grupo', {
+  return {
     p_nombre: texto(b.nombre, 200),
     p_empresa: texto(b.empresa, 200),
     p_contacto: texto(b.contacto, 200, false),
@@ -197,9 +200,30 @@ app.post('/api/grupos', async (c) => {
     p_llegada: llegada,
     p_salida: salida,
     p_estimados: est,
-  });
+  };
+}
+
+app.post('/api/grupos', async (c) => {
+  exigir(c, 'grupos', 'admin');
+  const b = await c.req.json().catch(() => ({}));
+  const datos = datosGrupo(b);
+  // La fecha de hoy se toma en hora de Cancún, no en la del equipo de quien captura.
+  if (datos.p_llegada < hoyLocal()) throw new ErrorApi(400, 'La llegada no puede ser anterior a hoy.');
+  const id = await c.get('db').rpc<string>('crear_grupo', datos);
   if (b.evento && b.evento.tipo) await registrarEvento(c, id, b.evento);
   return c.json({ id }, 201);
+});
+
+// Corrección de datos del grupo. La base valida las reglas (motivo, expedientes cerrados, fechas)
+// y deja cada cambio en la bitácora con el valor anterior y el nuevo.
+app.post('/api/grupos/:id/datos', async (c) => {
+  exigir(c, 'grupos', 'admin');
+  const id = uuid(c.req.param('id'));
+  const b = await c.req.json().catch(() => ({}));
+  const motivo = texto(b.motivo, 500, false);
+  if (motivo.length < 3) throw new ErrorApi(400, 'Escribe el motivo del cambio.');
+  const cambios = await c.get('db').rpc<number>('editar_grupo', { p_grupo: id, ...datosGrupo(b), p_motivo: motivo });
+  return c.json({ cambios });
 });
 
 async function registrarEvento(c: any, grupo: string, e: any) {
