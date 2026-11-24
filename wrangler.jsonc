@@ -4,6 +4,11 @@
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-11-01",
   "observability": { "enabled": true },
+  // Dirección propia (opsmyk.com está en esta misma cuenta de Cloudflare). La dirección
+  // workers.dev se mantiene activa mientras todos cambian a la nueva.
+  "routes": [{ "pattern": "taxzero.opsmyk.com", "custom_domain": true }],
+  "workers_dev": true,
+  "preview_urls": true,
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
