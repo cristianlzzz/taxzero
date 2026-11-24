@@ -143,3 +143,9 @@ O conecta este repositorio en Cloudflare (Workers → Create → Import a reposi
   el huésped aceptó el aviso y la captura sigue activa).
 - El bucket tiene una regla de candado (*bucket lock*) indefinida: ningún archivo se puede borrar ni reemplazar.
 - Los archivos de prueba guardados antes de este cambio siguen en Supabase Storage y se leen desde ahí.
+
+## Dirección
+
+- La app se publica en **https://taxzero.opsmyk.com** (dominio propio en Cloudflare). La dirección anterior
+  `taxzero.myk-technology-myk.workers.dev` sigue funcionando mientras todos cambian a la nueva.
+- Al entrar por la dirección nueva hay que iniciar sesión otra vez (cada dirección guarda su propia sesión).
