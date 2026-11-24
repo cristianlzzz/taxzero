@@ -12,7 +12,10 @@ export const state = {
   toast: null,
 };
 
-const ICONO = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>`;
+const ICONO = '<img class="brand-logo" src="/logo-fairmont.png" width="24" height="24" alt="" aria-hidden="true">';
+
+// Aviso de derechos de autor al pie de las pantallas de PC.
+export const PIE = () => `<footer class="pie">© ${new Date().getFullYear()} Cristian Lázaro. Todos los derechos reservados.</footer>`;
 
 // ------------------------------------------------------------------ avisos
 let toastT;
@@ -46,7 +49,7 @@ function loginHTML(error) {
     <p class="err" id="l-err" ${error ? '' : 'hidden'}>${esc(error || '')}</p>
     <button type="submit" class="btn primary block">Entrar</button>
     <p class="muted center small"><a href="${RUTA_AVISO}">Aviso de privacidad</a></p>
-  </form></main>`;
+  </form>${PIE()}</main>`;
 }
 
 function mostrarLogin(error) {
@@ -107,7 +110,7 @@ function mostrarAvisoPublico() {
     ${borradorHTML()}${avisoIntegralHTML()}
     <p class="muted small">Versión ${esc(AVISO_VERSION)}</p>
     <p><a href="#/">${state.perfil ? 'Volver a Taxzero' : 'Ir al inicio de sesión'}</a></p>
-  </div></main>`;
+  </div>${PIE()}</main>`;
 }
 
 function mostrarAvisoPersonal(error) {
