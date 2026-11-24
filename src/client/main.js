@@ -139,7 +139,8 @@ async function aceptarAviso(form) {
 
 // ------------------------------------------------------------------ marco
 function secciones(rol) {
-  const s = [['/', 'Grupos'], ['/avance', 'Avance']];
+  const s = [['/', 'Grupos']];
+  if (rol !== 'frontdesk') s.push(['/avance', 'Avance']);
   if (rol === 'admin' || rol === 'impuestos') s.push(['/bitacora', 'Bitácora']);
   if (rol === 'admin') s.push(['/usuarios', 'Usuarios']);
   return s;

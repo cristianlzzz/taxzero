@@ -146,6 +146,16 @@ O conecta este repositorio en Cloudflare (Workers → Create → Import a reposi
 
 ## Dirección
 
-- La app se publica en **https://taxzero.opsmyk.com** (dominio propio en Cloudflare). La dirección anterior
-  `taxzero.myk-technology-myk.workers.dev` sigue funcionando mientras todos cambian a la nueva.
-- Al entrar por la dirección nueva hay que iniciar sesión otra vez (cada dirección guarda su propia sesión).
+- La app se publica solo en **https://taxzero.opsmyk.com** (dominio propio en Cloudflare). Las direcciones
+  `*.workers.dev` están apagadas (`workers_dev` y `preview_urls` en `false`).
+
+## Tablero y datos de grupos
+
+- La lista de grupos se divide por etapa de la estancia, con la fecha de hoy en hora de Cancún:
+  **En casa** (llegó y no ha pasado su salida), **Por llegar** y **Ya salieron**, más **Todos** y un buscador.
+- Grupos y Administración pueden corregir los datos del grupo con motivo obligatorio. Cada dato cambiado deja una
+  línea en la bitácora del grupo con el valor anterior y el nuevo (`editar_grupo`, migración 0012).
+- Si el grupo ya tiene expedientes cerrados, la empresa y las fechas de estancia quedan fijas; Impuestos debe
+  reabrir esos expedientes para corregirlas.
+- No se puede dar de alta un grupo con llegada anterior a hoy (se valida en la página, en el servidor y en la base).
+- Front Desk no ve la pestaña Avance ni los datos de expedientes detenidos.
