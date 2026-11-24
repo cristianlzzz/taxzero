@@ -564,7 +564,7 @@ const leerExcel = (f) => execFileSync('python3', ['-I', '-c',
 }
 {
   const { ctx, page } = await sesion('frontdesk');
-  await page.waitForSelector('a.tab:has-text("Avance")');
+  await page.waitForSelector('a.tab:has-text("Grupos")');
   ok(!(await page.isVisible('a.tab:has-text("Bitácora")')), 'Front Desk no ve la bitácora general');
   const r = await page.evaluate(async () => [(await fetch('/api/bitacora')).status, (await fetch('/api/bitacora/excel')).status]);
   ok(r[0] === 403 && r[1] === 403, `Front Desk no puede consultar la bitácora general (${r})`);
