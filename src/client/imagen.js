@@ -64,7 +64,7 @@ export function revisarFoto(origen) {
 
 // Umbrales calibrados con fotos de documentos de prueba (nítidas y degradadas a propósito).
 export const UMBRAL = {
-  nitidez: 150, // por debajo, las letras chicas ya no se leen: movida o desenfocada
+  nitidez: 90, // por debajo, las letras chicas ya no se leen: movida o desenfocada
   oscura: 105, // brillo del papel (percentil 75) por debajo de esto: falta luz
   reflejo: 0.005, // fracción de la foto quemada en blanco, claramente más brillante que el papel
   orilla: 0.05, // fracción de una orilla con trazos fuertes (texto o líneas que se salen de la foto)
