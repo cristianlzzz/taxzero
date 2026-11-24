@@ -336,6 +336,7 @@ table.avance tfoot td{font-weight:600;border-top:1px solid var(--line-2)}
 .bit-imp{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px}
 .bit-imp td{border-bottom:1px solid #e7e5e4;padding:6px 8px;vertical-align:top;text-align:left}
 .bit-imp td:first-child{white-space:nowrap}
+.bit-imp th{border-bottom:1px solid #a8a29e;padding:6px 8px;text-align:left;font-weight:600}
 @media print{
   @page{size:letter;margin:12mm}
   body{background:#fff !important}

@@ -10,7 +10,7 @@ import { PIE, header, state, toast } from './main.js';
 let root;
 let vista = null; // { ruta, datos, error }
 let carga = 0;
-const ui = { filtro: {}, ver: {}, checks: {}, tablero: null, buscar: '', anio: '' };
+const ui = { filtro: {}, ver: {}, checks: {}, tablero: null, buscar: '', anio: '', impSolo: '' };
 
 const rol = () => state.perfil.rol;
 const cola = () => QUEUE[rol()] || [];
@@ -24,6 +24,7 @@ function rutaActual() {
   if (h === '/avance') return { s: 'avance' };
   if (h === '/bitacora') return { s: 'bitacora' };
   if ((m = h.match(/^\/expedientes\/([0-9a-f-]{36})\/imprimir$/))) return { s: 'imprimir', id: m[1] };
+  if ((m = h.match(/^\/grupos\/([0-9a-f-]{36})\/imprimir$/))) return { s: 'imprimirgrupo', id: m[1] };
   if ((m = h.match(/^\/grupos\/([0-9a-f-]{36})$/))) return { s: 'grupo', id: m[1] };
   if ((m = h.match(/^\/expedientes\/([0-9a-f-]{36})$/))) return { s: 'exp', id: m[1] };
   return { s: 'grupos' };
@@ -69,6 +70,10 @@ function cargar(ruta) {
     return api('GET', '/api/grupos');
   }
   if (ruta.s === 'imprimir') return api('GET', `/api/expedientes/${ruta.id}`);
+  if (ruta.s === 'imprimirgrupo') {
+    if (!['impuestos', 'admin'].includes(rol())) return Promise.reject(new Error('Solo Impuestos y Administración pueden imprimir los expedientes de todo el grupo.'));
+    return api('GET', `/api/grupos/${ruta.id}/impresion`);
+  }
   if (ruta.s === 'bitacora') return cargarBitacora();
   return Promise.resolve({});
 }
@@ -84,8 +89,10 @@ function pintar() {
   else if (vista.ruta.s === 'avance') body = pantallaAvance(vista.datos);
   else if (vista.ruta.s === 'bitacora') body = pantallaBitacora(vista.datos);
   else if (vista.ruta.s === 'imprimir') body = pantallaImprimir(vista.datos);
+  else if (vista.ruta.s === 'imprimirgrupo') body = pantallaImprimirGrupo(vista.datos);
   else body = pantallaGrupos(vista.datos);
   root.innerHTML = `${header()}<main class="wrap">${body}</main>${PIE()}${modalHTML()}`;
+  if (vista.datos && vista.ruta.s === 'imprimirgrupo') seguirCargaFotos();
 }
 
 // ------------------------------------------------------------------ piezas
@@ -310,7 +317,8 @@ function pantallaGrupo(datos) {
   const filtros = [['todos', 'Todos'], ...(cola().length ? [['mios', cap[0].toUpperCase() + cap.slice(1)]] : []), ...(nDet ? [['detenidos', `Detenidos (${nDet})`]] : []), ...presentes.map((k) => [k, ESTADOS[k]])];
   return `${crumbs([{ t: 'Grupos', href: '#/' }, { t: g.nombre }])}
     <section class="page-head"><div><p class="eyebrow mono">${esc(g.codigo_opera || folioGrupo(g.folio))}</p><h1>${esc(g.nombre)}</h1></div>
-      <div class="row">${rol() !== 'frontdesk' && expedientes.length ? `<a class="btn" href="/api/grupos/${g.id}/excel" data-descarga>Descargar en Excel</a>` : ''}
+      <div class="row">${['impuestos', 'admin'].includes(rol()) && expedientes.length ? `<a class="btn" href="#/grupos/${g.id}/imprimir">Imprimir expedientes del grupo</a>` : ''}
+      ${rol() !== 'frontdesk' && expedientes.length ? `<a class="btn" href="/api/grupos/${g.id}/excel" data-descarga>Descargar en Excel</a>` : ''}
       ${esFD ? `<button class="btn primary" data-a="altahues">Dar de alta un huésped</button>` : ''}</div></section>
     <div class="stack">
       ${cancelado ? `<div class="notice cancelado"><b>Grupo cancelado</b> el ${fmt(cancelado.ts)} por ${esc(cancelado.registrado_por_nombre)}. Motivo: ${esc(cancelado.motivo)}<br>Se conserva toda su información. No se pueden dar de alta huéspedes ni generar QR${esGrupos ? ' mientras no lo reactives' : ''}.</div>` : ''}
@@ -673,35 +681,97 @@ function pantallaBitacora({ filas = [], hay_mas, grupos = [] }) {
 }
 
 // ------------------------------------------------------------------ expediente para imprimir (etapa 5)
-function pantallaImprimir({ expediente: e, grupo: g, documentos = [], bitacora = [] }) {
+// Portada del huésped y una hoja por documento vigente, en el orden del archivo físico.
+// La bitácora no se imprime: se consulta en la página.
+function hojasHuesped(e, g, documentos) {
   const ultimos = FILE_ORDER.map((t) => documentos.filter((d) => d.tipo === t).sort((a, b) => b.version - a.version)[0]).filter(Boolean);
   const hojas = ultimos.map((d) => `<section class="hoja">
       <div class="hoja-t"><b>${DOCS[d.tipo].label}${d.tipo === 'fmm' && d.fmm_tipo ? ` · ${esc(FMM_TIPOS[d.fmm_tipo] || d.fmm_tipo)}` : ''}</b>
         <span>${folioExp(e.folio)} · ${esc(e.nombre)} ${esc(e.apellidos)} · versión ${d.version} · ${fmt(d.capturado_en)}</span></div>
       <img src="/api/documentos/${d.id}/imagen" alt="${DOCS[d.tipo].label}"></section>`).join('');
+  return `<section class="hoja portada">
+      <p class="eyebrow">Expediente tax free · Fairmont Mayakoba</p>
+      <h1>${esc(e.nombre)} ${esc(e.apellidos)}</h1>
+      <dl class="kv">
+        <dt>Expediente</dt><dd class="mono">${folioExp(e.folio)}</dd>
+        <dt>Estado</dt><dd>${ESTADOS[e.estado]}</dd>
+        <dt>Nacionalidad</dt><dd>${esc(e.nacionalidad)}</dd>
+        <dt>Pasaporte</dt><dd class="mono">${esc(e.pasaporte || 'Sin capturar')}</dd>
+        <dt>Vence</dt><dd>${e.pasaporte_vence ? dateTxt(e.pasaporte_vence) : 'Sin registrar'}</dd>
+        <dt>Grupo</dt><dd>${esc(g.nombre)} <span class="mono">(${esc(g.codigo_opera || folioGrupo(g.folio))})</span></dd>
+        <dt>Estancia del grupo</dt><dd>${dateTxt(g.llegada)} al ${dateTxt(g.salida)}</dd>
+        <dt>Documentos</dt><dd>${ultimos.map((d) => DOCS[d.tipo].label).join(', ') || 'Ninguno'}</dd>
+      </dl>
+    </section>
+    ${hojas}`;
+}
+
+const impresoPor = () => `<p class="note">Impreso por ${esc(state.perfil.nombre)} el ${fmt(new Date().toISOString())}.</p>`;
+
+function pantallaImprimir({ expediente: e, grupo: g, documentos = [] }) {
   return `<div class="print-bar no-print"><a class="btn" href="#/expedientes/${e.id}">Volver al expediente</a>
       <span class="note">Una hoja por documento, en el orden del archivo físico. Se imprime la versión vigente de cada uno.</span>
       <button class="btn primary" data-a="imprimir">Imprimir</button></div>
-    <div class="impreso">
+    <div class="impreso">${hojasHuesped(e, g, documentos).replace('</dl>', `</dl>${impresoPor()}`)}</div>`;
+}
+
+// Todos los huéspedes del grupo en un solo documento: portada del grupo, luego cada expediente
+// (portada y documentos). Para guardarlo en PDF se elige "Guardar como PDF" al imprimir.
+function pantallaImprimirGrupo({ grupo: g, expedientes = [], documentos = [] }) {
+  const porExp = new Map();
+  documentos.forEach((d) => (porExp.get(d.expediente_id) || porExp.set(d.expediente_id, []).get(d.expediente_id)).push(d));
+  const conDocs = expedientes.filter((e) => porExp.has(e.id));
+  const incluidos = ui.impSolo === 'cerrado' ? conDocs.filter((e) => e.estado === 'cerrado') : conDocs;
+  const sinDocs = expedientes.length - conDocs.length;
+  const nFotos = incluidos.reduce((s, e) => s + porExp.get(e.id).filter((d) => FILE_ORDER.includes(d.tipo)).length, 0);
+  const filas = incluidos.map((e) => `<tr><td class="mono">${folioExp(e.folio)}</td><td>${esc(e.apellidos)}, ${esc(e.nombre)}</td><td>${esc(e.nacionalidad)}</td><td>${ESTADOS[e.estado]}</td></tr>`).join('');
+  return `<div class="print-bar no-print"><a class="btn" href="#/grupos/${g.id}">Volver al grupo</a>
+      <select id="imp-solo" class="anio" aria-label="Expedientes a incluir">
+        <option value="" ${ui.impSolo ? '' : 'selected'}>Todos los expedientes con documentos (${conDocs.length})</option>
+        <option value="cerrado" ${ui.impSolo === 'cerrado' ? 'selected' : ''}>Solo expedientes cerrados (${conDocs.filter((e) => e.estado === 'cerrado').length})</option>
+      </select>
+      <span class="note" id="imp-estado">Cargando fotos…</span>
+      <button class="btn primary" data-a="imprimir" id="imp-btn" disabled>Imprimir o guardar en PDF</button></div>
+    <p class="note no-print">Para guardarlo como archivo, en la ventana de impresión elige <b>Guardar como PDF</b>. Va un expediente tras otro, por apellido, con la versión vigente de cada documento.${sinDocs ? ` ${sinDocs} ${sinDocs === 1 ? 'huésped aún no tiene' : 'huéspedes aún no tienen'} documentos y no se incluyen.` : ''}</p>
+    <div class="impreso" data-fotos="${nFotos}">
       <section class="hoja portada">
-        <p class="eyebrow">Expediente tax free · Fairmont Mayakoba</p>
-        <h1>${esc(e.nombre)} ${esc(e.apellidos)}</h1>
+        <p class="eyebrow">Expedientes tax free · Fairmont Mayakoba</p>
+        <h1>${esc(g.nombre)}</h1>
         <dl class="kv">
-          <dt>Expediente</dt><dd class="mono">${folioExp(e.folio)}</dd>
-          <dt>Estado</dt><dd>${ESTADOS[e.estado]}</dd>
-          <dt>Nacionalidad</dt><dd>${esc(e.nacionalidad)}</dd>
-          <dt>Pasaporte</dt><dd class="mono">${esc(e.pasaporte || 'Sin capturar')}</dd>
-          <dt>Vence</dt><dd>${e.pasaporte_vence ? dateTxt(e.pasaporte_vence) : 'Sin registrar'}</dd>
-          <dt>Grupo</dt><dd>${esc(g.nombre)} <span class="mono">(${esc(g.codigo_opera || folioGrupo(g.folio))})</span></dd>
-          <dt>Estancia del grupo</dt><dd>${dateTxt(g.llegada)} al ${dateTxt(g.salida)}</dd>
-          <dt>Documentos</dt><dd>${ultimos.map((d) => DOCS[d.tipo].label).join(', ') || 'Ninguno'}</dd>
+          <dt>Grupo</dt><dd class="mono">${esc(g.codigo_opera || folioGrupo(g.folio))}</dd>
+          <dt>Empresa</dt><dd>${esc(g.empresa)}</dd>
+          <dt>Estancia</dt><dd>${dateTxt(g.llegada)} al ${dateTxt(g.salida)}</dd>
+          <dt>Expedientes</dt><dd class="num">${incluidos.length}${ui.impSolo === 'cerrado' ? ' (solo cerrados)' : ''}</dd>
         </dl>
-        <h3>Bitácora</h3>
-        <table class="bit-imp"><tbody>${bitacora.slice().reverse().map((l) => `<tr><td class="num">${fmt(l.ts)}</td><td>${esc(l.usuario_nombre)} (${esc(l.rol)})</td><td>${esc(l.accion)}${l.motivo ? `<br><i>Motivo: ${esc(l.motivo)}</i>` : ''}</td></tr>`).join('')}</tbody></table>
-        <p class="note">Impreso por ${esc(state.perfil.nombre)} el ${fmt(new Date().toISOString())}.</p>
+        ${incluidos.length ? `<table class="bit-imp"><thead><tr><th>Expediente</th><th>Huésped</th><th>Nacionalidad</th><th>Estado</th></tr></thead><tbody>${filas}</tbody></table>` : '<p>Ningún expediente con este filtro.</p>'}
+        ${impresoPor()}
       </section>
-      ${hojas}
+      ${incluidos.map((e) => hojasHuesped(e, g, porExp.get(e.id))).join('')}
     </div>`;
+}
+
+// Las fotos tardan en llegar en grupos grandes: el botón se activa cuando ya están todas.
+function seguirCargaFotos() {
+  const imgs = [...root.querySelectorAll('.impreso img')];
+  const estado = root.querySelector('#imp-estado');
+  const btn = root.querySelector('#imp-btn');
+  if (!estado || !btn) return;
+  const total = imgs.length;
+  const listo = () => {
+    const n = imgs.filter((i) => i.complete).length;
+    const fallas = imgs.filter((i) => i.complete && !i.naturalWidth).length;
+    if (n < total) {
+      estado.textContent = `Cargando fotos: ${n} de ${total}…`;
+      return;
+    }
+    estado.textContent = fallas ? `${fallas} ${fallas === 1 ? 'foto no se pudo cargar' : 'fotos no se pudieron cargar'}. Recarga la página antes de imprimir.` : `${total} ${total === 1 ? 'foto lista' : 'fotos listas'}.`;
+    btn.disabled = false;
+  };
+  imgs.forEach((i) => {
+    i.addEventListener('load', listo);
+    i.addEventListener('error', listo);
+  });
+  listo();
 }
 
 // ------------------------------------------------------------------ usuarios (Administración)
@@ -1212,6 +1282,10 @@ document.addEventListener('change', (ev) => {
   validarMotivo();
   if (ev.target.id === 'g-anio') {
     ui.anio = ev.target.value;
+    pintar();
+  }
+  if (ev.target.id === 'imp-solo') {
+    ui.impSolo = ev.target.value;
     pintar();
   }
   if (ev.target.id === 'h-nac') {
