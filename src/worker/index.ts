@@ -178,11 +178,26 @@ app.get('/api/grupos', async (c) => {
   exigir(c, ...PC);
   let grupos = await c.get('db').select('resumen_grupos?select=*&order=llegada.desc,creado_en.desc');
   // Front Desk no ve el reporte de Avance: se le quitan los datos de expedientes detenidos.
+  // Front Desk solo ve grupos en casa o por llegar (salida de hoy en adelante, hora de Cancún).
   if (c.get('perfil').rol === 'frontdesk') {
-    grupos = grupos.map(({ detenidos: _d, ultimo_movimiento: _u, ...g }: any) => g);
+    const hoy = hoyLocal();
+    grupos = grupos.filter((g: any) => g.salida >= hoy).map(({ detenidos: _d, ultimo_movimiento: _u, ...g }: any) => g);
   }
   return c.json({ grupos });
 });
+
+// Front Desk no puede abrir ni trabajar en grupos cuya salida oficial ya pasó.
+const GRUPO_CERRADO_FD = 'Este grupo ya salió. Front Desk solo ve grupos en casa o por llegar.';
+async function exigirGrupoVigenteFD(c: any, grupoId: string) {
+  if (c.get('perfil').rol !== 'frontdesk') return;
+  const [g] = await c.get('db').select(`grupos?id=eq.${grupoId}&select=salida`);
+  if (g && g.salida < hoyLocal()) throw new ErrorApi(403, GRUPO_CERRADO_FD);
+}
+async function exigirExpedienteVigenteFD(c: any, expId: string) {
+  if (c.get('perfil').rol !== 'frontdesk') return;
+  const [e] = await c.get('db').select(`expedientes?id=eq.${expId}&select=grupo_id`);
+  if (e) await exigirGrupoVigenteFD(c, e.grupo_id);
+}
 
 // Datos generales del grupo, comunes al alta y a la edición.
 function datosGrupo(b: any) {
@@ -369,6 +384,7 @@ app.get('/api/grupos/:id', async (c) => {
   const db = c.get('db');
   const [grupo] = await db.select(`grupos?id=eq.${id}&select=*`);
   if (!grupo) throw new ErrorApi(404, 'El grupo no existe.');
+  if (c.get('perfil').rol === 'frontdesk' && grupo.salida < hoyLocal()) throw new ErrorApi(403, GRUPO_CERRADO_FD);
   const expedientes = await db.select(
     `expedientes?grupo_id=eq.${id}&select=id,folio,nombre,apellidos,nacionalidad,nacionalidad_codigo,pasaporte,pasaporte_vence,estado,recapturar,actualizado_en&order=actualizado_en.desc`,
   );
@@ -437,6 +453,7 @@ app.post('/api/grupos/:id/factura', async (c) => {
 app.post('/api/grupos/:id/huespedes', async (c) => {
   exigir(c, 'frontdesk', 'admin');
   const grupo = uuid(c.req.param('id'));
+  await exigirGrupoVigenteFD(c, grupo);
   const b = await c.req.json().catch(() => ({}));
   const nac = texto(b.nacionalidad_codigo, 3).toUpperCase();
   if (!/^[A-Z]{3}$/.test(nac)) throw new ErrorApi(400, 'Elige la nacionalidad de la lista.');
@@ -464,6 +481,7 @@ app.get('/api/expedientes/:id', async (c) => {
   const db = c.get('db');
   const [expediente] = await db.select(`expedientes?id=eq.${id}&select=*`);
   if (!expediente) throw new ErrorApi(404, 'El expediente no existe.');
+  await exigirGrupoVigenteFD(c, expediente.grupo_id);
   const [grupo, documentos, bitacora] = await Promise.all([
     db.select(`grupos?id=eq.${expediente.grupo_id}&select=id,folio,nombre,codigo_opera,llegada,salida`).then((r) => r[0]),
     db.select(`documentos?expediente_id=eq.${id}&select=id,tipo,version,fmm_tipo,bytes,ancho,alto,nitidez,capturado_en,capturado_por_nombre&order=tipo,version`),
@@ -505,6 +523,7 @@ app.post('/api/expedientes/:id/accion', async (c) => {
 app.post('/api/expedientes/:id/vencimiento', async (c) => {
   exigir(c, 'frontdesk', 'grupos', 'admin');
   const id = uuid(c.req.param('id'));
+  await exigirExpedienteVigenteFD(c, id);
   const b = await c.req.json().catch(() => ({}));
   await c.get('db').rpc('registrar_vencimiento', { p_expediente: id, p_fecha: fecha(b.fecha) });
   return c.json({ ok: true }, 201);
@@ -513,6 +532,7 @@ app.post('/api/expedientes/:id/vencimiento', async (c) => {
 app.post('/api/expedientes/:id/codigo', async (c) => {
   exigir(c, 'frontdesk', 'admin');
   const id = uuid(c.req.param('id'));
+  await exigirExpedienteVigenteFD(c, id);
   const [codigo] = await c.get('db').rpc<any[]>('generar_codigo', { p_expediente: id });
   return c.json({ codigo });
 });
@@ -521,8 +541,9 @@ app.get('/api/documentos/:id/imagen', async (c) => {
   exigir(c, ...PC);
   const id = uuid(c.req.param('id'));
   const db = c.get('db');
-  const [doc] = await db.select(`documentos?id=eq.${id}&select=ruta,mime`);
+  const [doc] = await db.select(`documentos?id=eq.${id}&select=ruta,mime,expediente_id`);
   if (!doc) throw new ErrorApi(404, 'El documento no existe.');
+  await exigirExpedienteVigenteFD(c, doc.expediente_id);
   const cuerpo = await leerArchivo(c.env, db, doc.ruta);
   return new Response(cuerpo, {
     headers: {

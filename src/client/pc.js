@@ -5,12 +5,12 @@ import {
   RIESGOS, TIPOS_EVENTO,
 } from './catalogos.js';
 import { api, dateTxt, diasEntre, esc, fmt, folioExp, folioGrupo, hoyHotel, mmss } from './util.js';
-import { header, state, toast } from './main.js';
+import { PIE, header, state, toast } from './main.js';
 
 let root;
 let vista = null; // { ruta, datos, error }
 let carga = 0;
-const ui = { filtro: {}, ver: {}, checks: {}, tablero: null, buscar: '' };
+const ui = { filtro: {}, ver: {}, checks: {}, tablero: null, buscar: '', anio: '' };
 
 const rol = () => state.perfil.rol;
 const cola = () => QUEUE[rol()] || [];
@@ -85,7 +85,7 @@ function pintar() {
   else if (vista.ruta.s === 'bitacora') body = pantallaBitacora(vista.datos);
   else if (vista.ruta.s === 'imprimir') body = pantallaImprimir(vista.datos);
   else body = pantallaGrupos(vista.datos);
-  root.innerHTML = `${header()}<main class="wrap">${body}</main>${modalHTML()}`;
+  root.innerHTML = `${header()}<main class="wrap">${body}</main>${PIE()}${modalHTML()}`;
 }
 
 // ------------------------------------------------------------------ piezas
@@ -151,11 +151,17 @@ function pantallaGrupos({ grupos }) {
   const puedeAlta = ['grupos', 'admin'].includes(rol());
   const hoy = hoyHotel();
   const q = normal(ui.buscar.trim());
-  const buscados = q ? grupos.filter((g) => normal(`${g.nombre} ${g.empresa} ${g.codigo_opera || ''} ${folioGrupo(g.folio)}`).includes(q)) : grupos;
+  // Año de la llegada oficial. Los grupos se conservan para siempre, así que se pueden filtrar por año.
+  const anios = [...new Set(grupos.map((g) => g.llegada.slice(0, 4)))].sort().reverse();
+  if (ui.anio && !anios.includes(ui.anio)) ui.anio = '';
+  const delAnio = ui.anio ? grupos.filter((g) => g.llegada.startsWith(ui.anio)) : grupos;
+  const buscados = q ? delAnio.filter((g) => normal(`${g.nombre} ${g.empresa} ${g.codigo_opera || ''} ${folioGrupo(g.folio)}`).includes(q)) : delAnio;
   const por = { casa: [], llegar: [], salieron: [], todos: buscados };
   buscados.forEach((g) => por[etapaGrupo(g, hoy)].push(g));
   // Al entrar se abre la primera etapa que tenga grupos (normalmente En casa).
-  if (!ui.tablero) ui.tablero = ['casa', 'llegar', 'salieron'].find((k) => por[k].length) || 'casa';
+  // Front Desk solo trabaja con grupos en casa o por llegar (el servidor no le entrega los que ya salieron).
+  const etapas = rol() === 'frontdesk' ? ETAPAS.filter(([k]) => k !== 'salieron') : ETAPAS;
+  if (!ui.tablero || !etapas.some(([k]) => k === ui.tablero)) ui.tablero = ['casa', 'llegar', 'salieron'].find((k) => por[k].length && etapas.some(([e]) => e === k)) || 'casa';
   const et = ui.tablero;
   const lista = por[et].slice().sort(ORDEN_ETAPA[et]);
   const cards = lista
@@ -177,17 +183,20 @@ function pantallaGrupos({ grupos }) {
       </a>`;
     })
     .join('');
-  const vacio = q
-    ? `Ningún grupo de "${esc(ui.buscar.trim())}" en ${ETAPAS.find((x) => x[0] === et)[1].toLowerCase()}.`
+  const vacio = q || ui.anio
+    ? `Ningún grupo${q ? ` de "${esc(ui.buscar.trim())}"` : ''}${ui.anio ? ` con llegada en ${ui.anio}` : ''} en ${ETAPAS.find((x) => x[0] === et)[1].toLowerCase()}.`
     : { casa: 'No hay grupos hospedados hoy.', llegar: 'No hay grupos por llegar.', salieron: 'Ningún grupo ha salido todavía.', todos: 'Todavía no hay grupos.' }[et]
       + (et !== 'salieron' && !grupos.length ? (puedeAlta ? ' Da de alta el primero con el botón de arriba.' : ' Grupos los da de alta desde su PC.') : '');
   return `<section class="page-head"><div><p class="eyebrow">${eyebrow}</p><h1>${titulo}</h1><p class="lead">${lead}</p></div>
       <div class="row">${puedeAlta ? '<a class="btn primary" href="#/grupos/nuevo">Dar de alta un grupo</a>' : ''}</div></section>
     <div class="tablero-bar">
-      <div class="seg" role="tablist" aria-label="Etapa de la estancia">${ETAPAS.map(([k, l]) => `<button class="tab" role="tab" data-a="etapa" data-k="${k}" aria-selected="${et === k}">${l} <span class="num">${por[k].length}</span></button>`).join('')}</div>
-      <input type="search" id="g-buscar" class="buscar" placeholder="Buscar grupo, empresa o código" value="${esc(ui.buscar)}" aria-label="Buscar grupo" autocomplete="off">
+      <div class="seg" role="tablist" aria-label="Etapa de la estancia">${etapas.map(([k, l]) => `<button class="tab" role="tab" data-a="etapa" data-k="${k}" aria-selected="${et === k}">${l} <span class="num">${por[k].length}</span></button>`).join('')}</div>
+      <div class="row tablero-filtros">
+        <select id="g-anio" class="anio" aria-label="Año de llegada"><option value="">Todos los años</option>${anios.map((a) => `<option value="${a}" ${ui.anio === a ? 'selected' : ''}>${a}</option>`).join('')}</select>
+        <input type="search" id="g-buscar" class="buscar" placeholder="Buscar grupo, empresa o código" size="30" value="${esc(ui.buscar)}" aria-label="Buscar grupo" autocomplete="off">
+      </div>
     </div>
-    <p class="note tablero-nota">${ETAPAS.find((x) => x[0] === et)[2]}</p>
+    <p class="note tablero-nota">${et === 'todos' && rol() === 'frontdesk' ? 'Grupos en casa y por llegar. Los grupos que ya salieron no se muestran a Front Desk.' : ETAPAS.find((x) => x[0] === et)[2]}</p>
     ${lista.length ? `<div class="ggrid">${cards}</div>` : `<div class="card flat empty">${vacio}</div>`}`;
 }
 
@@ -1176,6 +1185,10 @@ document.addEventListener('change', (ev) => {
     if (n) n.hidden = ev.target.value !== 'MEX';
   }
   validarMotivo();
+  if (ev.target.id === 'g-anio') {
+    ui.anio = ev.target.value;
+    pintar();
+  }
   if (ev.target.id === 'h-nac') {
     const n = document.getElementById('h-nac-mx');
     if (n) n.hidden = ev.target.value !== 'MEX';

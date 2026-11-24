@@ -159,6 +159,9 @@ O conecta este repositorio en Cloudflare (Workers → Create → Import a reposi
   reabrir esos expedientes para corregirlas.
 - No se puede dar de alta un grupo con llegada anterior a hoy (se valida en la página, en el servidor y en la base).
 - Front Desk no ve la pestaña Avance ni los datos de expedientes detenidos.
+- Filtro por año de llegada en el tablero (los grupos se conservan para siempre).
+- Front Desk solo ve grupos en casa o por llegar; el servidor le niega los grupos cuya salida ya pasó (lista, ficha, expedientes, fotos, QR y alta de huéspedes).
+- Icono con el logo de Fairmont y aviso de copyright (© Cristian Lázaro) al pie de las pantallas de PC y del inicio de sesión.
 
 ## Documentos de Crédito por grupo
 
