@@ -7,6 +7,7 @@ import {
 import { api, dateTxt, diasEntre, esc, fmt, folioExp, folioGrupo, hoyHotel, mmss } from './util.js';
 import { PIE, header, state, toast } from './main.js';
 import * as importar from './importar.js';
+import { abrirDescarga } from './paquete.js';
 
 let root;
 let vista = null; // { ruta, datos, error }
@@ -335,7 +336,7 @@ function pantallaGrupo(datos) {
   const filtros = [['todos', 'Todos'], ...(cola().length ? [['mios', cap[0].toUpperCase() + cap.slice(1)]] : []), ...(nDet ? [['detenidos', `Detenidos (${nDet})`]] : []), ...presentes.map((k) => [k, ESTADOS[k]])];
   return `${crumbs([{ t: 'Grupos', href: '#/' }, { t: g.nombre }])}
     <section class="page-head"><div><p class="eyebrow mono">${esc(g.codigo_opera || folioGrupo(g.folio))}</p><h1>${esc(g.nombre)}</h1></div>
-      <div class="row">${['impuestos', 'admin'].includes(rol()) && expedientes.length ? `<a class="btn" href="#/grupos/${g.id}/imprimir">Imprimir expedientes del grupo</a>` : ''}
+      <div class="row">${['impuestos', 'admin'].includes(rol()) && expedientes.length ? `<a class="btn" href="#/grupos/${g.id}/imprimir">Imprimir expedientes del grupo</a><button class="btn" data-a="zipgrupo">Descargar expediente completo (.zip)</button>` : ''}
       ${rol() !== 'frontdesk' && expedientes.length ? `<a class="btn" href="/api/grupos/${g.id}/excel" data-descarga>Descargar en Excel</a>` : ''}
       ${puedeImportar() && !cancelado ? `<a class="btn ${esFD ? '' : 'primary'}" href="#/grupos/${g.id}/importar">Dar de alta desde rooming list</a>` : ''}
       ${esFD ? `<button class="btn primary" data-a="altahues">Dar de alta un huésped</button>` : ''}</div></section>
@@ -1258,6 +1259,9 @@ document.addEventListener('click', (ev) => {
       break;
     case 'imprimir':
       window.print();
+      break;
+    case 'zipgrupo':
+      abrirDescarga(vista.datos.grupo, vista.datos.expedientes.length);
       break;
     case 'gen-clave': {
       const inp = document.getElementById(d.t);

@@ -20,8 +20,8 @@ const CRC = (() => {
   }
   return t;
 })();
-function crc32(b: Uint8Array): number {
-  let c = 0xffffffff;
+export function crc32(b: Uint8Array, previo = 0): number {
+  let c = (previo ^ 0xffffffff) >>> 0;
   for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 0xff] ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 }
