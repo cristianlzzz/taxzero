@@ -728,6 +728,62 @@ if (C.admin[1]) {
   console.log('· Sin CLAVE_ADMIN: se omiten las pruebas de usuarios');
 }
 
+// ---------------------------------------------------------------- 7b. Grupos cancela un grupo
+{
+  const nombreCancel = `Grupo cancelado ${sufijo}`;
+  const { ctx, page } = await sesion('grupos');
+  await page.waitForSelector('text=Expedientes por');
+  const { id: idCancel } = await page.evaluate(async (b) => (await fetch('/api/grupos', { method: 'POST', headers: { 'x-taxzero': '1', 'content-type': 'application/json' }, body: JSON.stringify(b) })).json(),
+    { nombre: nombreCancel, empresa: 'Fabrikam', llegada: diaCancun(10), salida: diaCancun(13), evento: { tipo: 'congreso', organizador: 'Fabrikam Association', pais_codigo: 'USA', pais: 'Estados Unidos' } });
+  await page.goto(`${BASE}/#/grupos/${idCancel}`);
+  await page.waitForSelector(`h1:has-text("${nombreCancel}")`);
+  await page.click('button[data-a=cancelgrupo]');
+  await page.click('.modal button[type=submit]');
+  ok(await page.isVisible('#cg-err:has-text("motivo")'), 'Cancelar el grupo exige motivo');
+  await page.fill('#cg-motivo', 'El cliente canceló el evento');
+  await page.screenshot({ path: `${OUT}/23-cancelar-grupo.png` });
+  await page.click('.modal button[type=submit]');
+  await page.waitForSelector('.notice.cancelado');
+  ok(await page.isVisible('.log >> text=Canceló el grupo'), 'La cancelación queda en la bitácora del grupo');
+  ok(await page.isVisible('.log >> text=El cliente canceló el evento'), 'El motivo de la cancelación queda en la bitácora');
+  await page.screenshot({ path: `${OUT}/24-grupo-cancelado.png`, fullPage: true });
+  await page.goto(`${BASE}/#/`);
+  await page.waitForSelector('.tablero-bar');
+  await page.click('[data-a=etapa][data-k=llegar]');
+  ok(!(await page.isVisible(`.gcard:has-text("${nombreCancel}")`)), 'El grupo cancelado ya no aparece en Por llegar');
+  await page.click('[data-a=etapa][data-k=cancelados]');
+  ok(await page.isVisible(`.gcard:has-text("${nombreCancel}") >> text=Cancelado`), 'El grupo cancelado aparece en la pestaña Cancelados');
+  await page.screenshot({ path: `${OUT}/25-tablero-cancelados.png` });
+  await ctx.close();
+
+  const fd = await sesion('frontdesk');
+  await fd.page.waitForSelector('.tablero-bar');
+  ok(!(await fd.page.isVisible('[data-a=etapa][data-k=cancelados]')), 'Front Desk no tiene la pestaña Cancelados');
+  const r = await fd.page.evaluate(async (id) => {
+    const lista = (await (await fetch('/api/grupos')).json()).grupos.some((g) => g.id === id);
+    const alta = (await fetch(`/api/grupos/${id}/huespedes`, { method: 'POST', headers: { 'x-taxzero': '1', 'content-type': 'application/json' }, body: '{"nombre":"A","apellidos":"B","nacionalidad_codigo":"USA","nacionalidad":"Estados Unidos"}' })).status;
+    return { lista, alta };
+  }, idCancel);
+  ok(!r.lista && r.alta === 403, `Front Desk no ve el grupo cancelado ni puede dar de alta huéspedes (${r.alta})`);
+  await fd.ctx.close();
+
+  if (C.admin[1]) {
+    const ad = await sesion('admin');
+    await ad.page.waitForSelector('header.top');
+    const alta = await ad.page.evaluate(async (id) => (await fetch(`/api/grupos/${id}/huespedes`, { method: 'POST', headers: { 'x-taxzero': '1', 'content-type': 'application/json' }, body: '{"nombre":"A","apellidos":"B","nacionalidad_codigo":"USA","nacionalidad":"Estados Unidos"}' })).status, idCancel);
+    ok(alta >= 400, `La base no deja dar de alta huéspedes en un grupo cancelado (${alta})`);
+    await ad.page.goto(`${BASE}/#/grupos/${idCancel}`);
+    await ad.page.waitForSelector('.notice.cancelado');
+    ok(!(await ad.page.isVisible('text=Dar de alta un huésped')), 'En un grupo cancelado no aparece el alta de huéspedes');
+    await ad.page.click('button[data-a=cancelgrupo][data-k=reactivar]');
+    await ad.page.fill('#cg-motivo', 'Se canceló por error');
+    await ad.page.click('.modal button[type=submit]');
+    await ad.page.waitForSelector('button[data-a=cancelgrupo][data-k=cancelar]');
+    ok(await ad.page.isVisible('.log >> text=Reactivó el grupo cancelado'), 'La reactivación queda en la bitácora');
+    await ad.ctx.close();
+  }
+}
+
 // ---------------------------------------------------------------- 8. Aviso de privacidad público
 {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });

@@ -119,10 +119,12 @@ const ETAPAS = [
   ['casa', 'En casa', 'Grupos hospedados hoy: ya llegaron y aún no llega su salida oficial.'],
   ['llegar', 'Por llegar', 'Grupos con llegada oficial después de hoy, del más próximo al más lejano.'],
   ['salieron', 'Ya salieron', 'Grupos cuya salida oficial ya pasó. Aquí se terminan de revisar y cerrar sus expedientes.'],
+  ['cancelados', 'Cancelados', 'Grupos cancelados por Grupos o Administración. Se conservan con sus huéspedes, documentos, motivo y bitácora.'],
   ['todos', 'Todos', 'Todos los grupos, del más reciente al más antiguo.'],
 ];
 
 function etapaGrupo(g, hoy) {
+  if (g.cancelado) return 'cancelados';
   if (g.llegada > hoy) return 'llegar';
   if (g.salida < hoy) return 'salieron';
   return 'casa';
@@ -131,6 +133,7 @@ function etapaGrupo(g, hoy) {
 function cuandoTxt(g, hoy) {
   const et = etapaGrupo(g, hoy);
   const d = (n, uno, hoyTxt, fut, pas) => (n === 0 ? hoyTxt : n === 1 ? uno : n > 0 ? fut.replace('#', n) : pas.replace('#', -n));
+  if (et === 'cancelados') return 'Cancelado';
   if (et === 'llegar') return d(diasEntre(hoy, g.llegada), 'Llega mañana', 'Llega hoy', 'Llega en # días', '');
   if (et === 'casa') return `En casa · ${d(diasEntre(hoy, g.salida), 'sale mañana', 'sale hoy', 'sale en # días', '')}`;
   const n = diasEntre(g.salida, hoy);
@@ -141,6 +144,7 @@ const ORDEN_ETAPA = {
   casa: (a, b) => a.salida.localeCompare(b.salida),
   llegar: (a, b) => a.llegada.localeCompare(b.llegada),
   salieron: (a, b) => b.salida.localeCompare(a.salida),
+  cancelados: (a, b) => b.llegada.localeCompare(a.llegada),
   todos: (a, b) => b.llegada.localeCompare(a.llegada),
 };
 
@@ -156,11 +160,12 @@ function pantallaGrupos({ grupos }) {
   if (ui.anio && !anios.includes(ui.anio)) ui.anio = '';
   const delAnio = ui.anio ? grupos.filter((g) => g.llegada.startsWith(ui.anio)) : grupos;
   const buscados = q ? delAnio.filter((g) => normal(`${g.nombre} ${g.empresa} ${g.codigo_opera || ''} ${folioGrupo(g.folio)}`).includes(q)) : delAnio;
-  const por = { casa: [], llegar: [], salieron: [], todos: buscados };
+  const por = { casa: [], llegar: [], salieron: [], cancelados: [], todos: buscados };
   buscados.forEach((g) => por[etapaGrupo(g, hoy)].push(g));
   // Al entrar se abre la primera etapa que tenga grupos (normalmente En casa).
-  // Front Desk solo trabaja con grupos en casa o por llegar (el servidor no le entrega los que ya salieron).
-  const etapas = rol() === 'frontdesk' ? ETAPAS.filter(([k]) => k !== 'salieron') : ETAPAS;
+  // Front Desk solo trabaja con grupos en casa o por llegar (el servidor no le entrega los que ya salieron
+  // ni los cancelados).
+  const etapas = rol() === 'frontdesk' ? ETAPAS.filter(([k]) => !['salieron', 'cancelados'].includes(k)) : ETAPAS;
   if (!ui.tablero || !etapas.some(([k]) => k === ui.tablero)) ui.tablero = ['casa', 'llegar', 'salieron'].find((k) => por[k].length && etapas.some(([e]) => e === k)) || 'casa';
   const et = ui.tablero;
   const lista = por[et].slice().sort(ORDEN_ETAPA[et]);
@@ -185,8 +190,8 @@ function pantallaGrupos({ grupos }) {
     .join('');
   const vacio = q || ui.anio
     ? `Ningún grupo${q ? ` de "${esc(ui.buscar.trim())}"` : ''}${ui.anio ? ` con llegada en ${ui.anio}` : ''} en ${ETAPAS.find((x) => x[0] === et)[1].toLowerCase()}.`
-    : { casa: 'No hay grupos hospedados hoy.', llegar: 'No hay grupos por llegar.', salieron: 'Ningún grupo ha salido todavía.', todos: 'Todavía no hay grupos.' }[et]
-      + (et !== 'salieron' && !grupos.length ? (puedeAlta ? ' Da de alta el primero con el botón de arriba.' : ' Grupos los da de alta desde su PC.') : '');
+    : { casa: 'No hay grupos hospedados hoy.', llegar: 'No hay grupos por llegar.', salieron: 'Ningún grupo ha salido todavía.', cancelados: 'No hay grupos cancelados.', todos: 'Todavía no hay grupos.' }[et]
+      + (!['salieron', 'cancelados'].includes(et) && !grupos.length ? (puedeAlta ? ' Da de alta el primero con el botón de arriba.' : ' Grupos los da de alta desde su PC.') : '');
   return `<section class="page-head"><div><p class="eyebrow">${eyebrow}</p><h1>${titulo}</h1><p class="lead">${lead}</p></div>
       <div class="row">${puedeAlta ? '<a class="btn primary" href="#/grupos/nuevo">Dar de alta un grupo</a>' : ''}</div></section>
     <div class="tablero-bar">
@@ -196,7 +201,7 @@ function pantallaGrupos({ grupos }) {
         <input type="search" id="g-buscar" class="buscar" placeholder="Buscar grupo, empresa o código" size="30" value="${esc(ui.buscar)}" aria-label="Buscar grupo" autocomplete="off">
       </div>
     </div>
-    <p class="note tablero-nota">${et === 'todos' && rol() === 'frontdesk' ? 'Grupos en casa y por llegar. Los grupos que ya salieron no se muestran a Front Desk.' : ETAPAS.find((x) => x[0] === et)[2]}</p>
+    <p class="note tablero-nota">${et === 'todos' && rol() === 'frontdesk' ? 'Grupos en casa y por llegar. Los grupos que ya salieron o se cancelaron no se muestran a Front Desk.' : ETAPAS.find((x) => x[0] === et)[2]}</p>
     ${lista.length ? `<div class="ggrid">${cards}</div>` : `<div class="card flat empty">${vacio}</div>`}`;
 }
 
@@ -283,7 +288,10 @@ function pantallaGrupo(datos) {
   const mostrados = expedientes
     .filter((e) => f === 'todos' || (f === 'mios' ? enCola(e) : f === 'detenidos' ? detenido(e) : e.estado === f))
     .sort((a, b) => enCola(b) - enCola(a) || (b.actualizado_en > a.actualizado_en ? 1 : -1));
-  const esFD = ['frontdesk', 'admin'].includes(rol());
+  const cancelado = datos.cancelacion;
+  // En un grupo cancelado no se dan de alta huéspedes ni se generan QR.
+  const esFD = ['frontdesk', 'admin'].includes(rol()) && !cancelado;
+  const esGrupos = ['grupos', 'admin'].includes(rol());
   const filas = mostrados
     .map((e) => {
       const q = activos.get(e.id);
@@ -305,7 +313,8 @@ function pantallaGrupo(datos) {
       <div class="row">${rol() !== 'frontdesk' && expedientes.length ? `<a class="btn" href="/api/grupos/${g.id}/excel" data-descarga>Descargar en Excel</a>` : ''}
       ${esFD ? `<button class="btn primary" data-a="altahues">Dar de alta un huésped</button>` : ''}</div></section>
     <div class="stack">
-      <div class="card flat stack">${['grupos', 'admin'].includes(rol()) ? `<div class="row space-between"><h3>Datos del grupo</h3><button class="btn sm" data-a="editgrupo">Editar datos</button></div>` : ''}<dl class="info">
+      ${cancelado ? `<div class="notice cancelado"><b>Grupo cancelado</b> el ${fmt(cancelado.ts)} por ${esc(cancelado.registrado_por_nombre)}. Motivo: ${esc(cancelado.motivo)}<br>Se conserva toda su información. No se pueden dar de alta huéspedes ni generar QR${esGrupos ? ' mientras no lo reactives' : ''}.</div>` : ''}
+      <div class="card flat stack">${esGrupos ? `<div class="row space-between"><h3>Datos del grupo</h3><div class="row"><button class="btn sm" data-a="editgrupo">Editar datos</button>${cancelado ? '<button class="btn sm" data-a="cancelgrupo" data-k="reactivar">Reactivar grupo</button>' : '<button class="btn sm warn" data-a="cancelgrupo" data-k="cancelar">Cancelar grupo</button>'}</div></div>` : ''}<dl class="info">
         <div><dt>Empresa</dt><dd>${esc(g.empresa)}</dd></div>
         <div><dt>Estancia</dt><dd>${dateTxt(g.llegada)} al ${dateTxt(g.salida)}</dd></div>
         <div><dt>Huéspedes estimados</dt><dd class="num">${g.estimados ?? '·'}</dd></div>
@@ -879,6 +888,18 @@ function modalHTML() {
       <p class="err" id="eg-err" hidden></p>
       <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Guardar cambios</button></div></form>`;
   }
+  if (m.kind === 'cancelgrupo') {
+    const g = vista.datos.grupo;
+    const n = (vista.datos.expedientes || []).length;
+    const re = m.accion === 'reactivar';
+    inner = `<form class="modal" data-form="cancelgrupo" novalidate><h2>${re ? 'Reactivar grupo' : 'Cancelar grupo'}</h2><p class="muted">${esc(g.nombre)} · <span class="mono">${esc(g.codigo_opera || folioGrupo(g.folio))}</span></p>
+      ${re ? '<p>El grupo vuelve a su etapa según sus fechas y Front Desk podrá volver a dar de alta huéspedes y generar QR.</p>'
+        : `<p>El grupo pasa a la pestaña Cancelados. No se borra nada${n ? `: sus ${n} ${n === 1 ? 'huésped' : 'huéspedes'} y sus documentos se conservan` : ''}. Front Desk deja de verlo y ya no se pueden dar de alta huéspedes ni generar QR.</p>`}
+      <div class="field"><label for="cg-motivo">Motivo ${re ? 'de la reactivación' : 'de la cancelación'}</label><textarea id="cg-motivo" required maxlength="500" rows="3" placeholder="${re ? 'Ej. El cliente confirmó de nuevo el evento.' : 'Ej. El cliente canceló el evento por cambio de sede.'}"></textarea></div>
+      <p class="note">Queda en la bitácora del grupo con tu nombre, la fecha y el motivo. ${re ? '' : 'Se puede reactivar después si fue un error.'}</p>
+      <p class="err" id="cg-err" hidden></p>
+      <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Volver</button><button type="submit" class="btn ${re ? 'primary' : 'warn'}">${re ? 'Reactivar grupo' : 'Cancelar grupo'}</button></div></form>`;
+  }
   if (m.kind === 'folio-maestra') {
     inner = `<form class="modal" data-form="folio-maestra" novalidate><h2>Folio de Opera de la cuenta maestra</h2><p class="muted">${esc(vista.datos.grupo.nombre)}</p>
       <div class="field"><label for="fm-folio">Folio de la cuenta maestra con la devolución</label><input type="text" id="fm-folio" maxlength="60" required autocomplete="off"></div>
@@ -965,7 +986,7 @@ function abrirModal(m) {
   state.modal = m;
   document.querySelector('.scrim')?.remove();
   root.insertAdjacentHTML('beforeend', modalHTML());
-  root.querySelector('.scrim input, .scrim select')?.focus();
+  root.querySelector('.scrim input, .scrim select, .scrim textarea')?.focus();
 }
 function cerrarModal() {
   const recargarAlCerrar = state.modal?.recargar;
@@ -1073,6 +1094,9 @@ document.addEventListener('click', (ev) => {
     case 'doc-extra':
       abrirModal({ kind: d.a });
       break;
+    case 'cancelgrupo':
+      abrirModal({ kind: 'cancelgrupo', accion: d.k });
+      break;
     case 'editgrupo':
       abrirModal({ kind: 'editgrupo' });
       break;
@@ -1140,6 +1164,7 @@ document.addEventListener('submit', (ev) => {
   if (f.dataset.form === 'factura') enviarGrupo(f, 'factura', { folio: f.querySelector('#fa-folio').value.trim(), tipo: f.querySelector('#fa-tipo').value }, 'Folio registrado.');
   if (f.dataset.form === 'evento') enviarEvento(f);
   if (f.dataset.form === 'editgrupo') enviarEdicionGrupo(f);
+  if (f.dataset.form === 'cancelgrupo') enviarCancelacionGrupo(f);
   if (f.dataset.form === 'folio-maestra') enviarGrupo(f, 'folio-maestra', { folio: f.querySelector('#fm-folio').value.trim(), nota: f.querySelector('#fm-nota').value.trim() || ' ' }, 'Folio registrado.');
   if (f.dataset.form === 'doc-extra') enviarDocExtra(f);
   if (f.dataset.form === 'riesgo') enviarGrupo(f, 'riesgo', { nivel: state.modal.k, nota: f.querySelector('#ri-nota').value.trim() }, 'Riesgo registrado.');
@@ -1286,6 +1311,29 @@ async function enviarGrupo(f, tipo, datos, msg) {
     await api('POST', `/api/grupos/${vista.datos.grupo.id}/${tipo}`, datos);
     state.modal = null;
     toast(msg);
+    recargar();
+  } catch (e) {
+    err.hidden = false;
+    err.textContent = e.message;
+    btn.disabled = false;
+  }
+}
+
+async function enviarCancelacionGrupo(f) {
+  const err = f.querySelector('#cg-err');
+  const motivo = f.querySelector('#cg-motivo').value.trim();
+  const accion = state.modal?.accion === 'reactivar' ? 'reactivar' : 'cancelar';
+  if (motivo.length < 3) {
+    err.hidden = false;
+    err.textContent = accion === 'reactivar' ? 'Escribe el motivo de la reactivación.' : 'Escribe el motivo de la cancelación.';
+    return;
+  }
+  const btn = f.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try {
+    await api('POST', `/api/grupos/${vista.datos.grupo.id}/cancelacion`, { accion, motivo });
+    state.modal = null;
+    toast(accion === 'reactivar' ? 'Grupo reactivado. Quedó en la bitácora.' : 'Grupo cancelado. Quedó en la bitácora y en la pestaña Cancelados.');
     recargar();
   } catch (e) {
     err.hidden = false;

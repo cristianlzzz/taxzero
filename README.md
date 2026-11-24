@@ -162,6 +162,10 @@ O conecta este repositorio en Cloudflare (Workers → Create → Import a reposi
 - Filtro por año de llegada en el tablero (los grupos se conservan para siempre).
 - Front Desk solo ve grupos en casa o por llegar; el servidor le niega los grupos cuya salida ya pasó (lista, ficha, expedientes, fotos, QR y alta de huéspedes).
 - Icono con el logo de Fairmont y aviso de copyright (© Cristian Lázaro) al pie de las pantallas de PC y del inicio de sesión.
+- Grupos y Administración pueden **cancelar** un grupo con motivo obligatorio (y reactivarlo, también con motivo).
+  No se borra nada: el grupo pasa a la pestaña **Cancelados**, Front Desk deja de verlo y la base no acepta
+  huéspedes, códigos QR ni fotos nuevas mientras siga cancelado. Cada cancelación o reactivación queda en
+  `cancelaciones_grupo` y en la bitácora del grupo (migración 0014).
 
 ## Documentos de Crédito por grupo
 
