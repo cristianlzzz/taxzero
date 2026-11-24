@@ -525,6 +525,8 @@ const marcarTodo = async (page) => {
   await page.waitForSelector('text=Expedientes por');
   const r = await page.evaluate(async () => (await fetch('/api/grupos', { method: 'POST', headers: { 'x-taxzero': '1', 'content-type': 'application/json' }, body: '{"nombre":"x","empresa":"y","llegada":"2026-01-01","salida":"2026-01-02"}' })).status);
   ok(r === 403, `Crédito no puede crear grupos (${r})`);
+  const z = await page.evaluate(async () => (await fetch('/api/grupos/00000000-0000-4000-8000-000000000000/paquete')).status);
+  ok(z === 403, `Crédito no puede descargar el expediente completo del grupo (${z})`);
   await ctx.close();
 }
 
@@ -594,6 +596,23 @@ const leerExcel = (f) => execFileSync('python3', ['-I', '-c',
   await page.goto(`${BASE}/#/grupos/${page.url().split('/grupos/')[1].split('/')[0]}`);
   await page.waitForSelector('text=Generó el PDF con los expedientes de todo el grupo');
   ok(true, 'Generar el PDF del grupo queda en la bitácora del grupo');
+
+  // Expediente completo del grupo en .zip (sin el selector de carpeta: se arma y se descarga).
+  await page.evaluate(() => { delete window.showSaveFilePicker; });
+  await page.click('[data-a="zipgrupo"]');
+  await page.waitForSelector('text=Incluye los pasaportes de todos los huéspedes');
+  const [dz] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), page.click('[data-z="ir"]')]);
+  const fz = `${OUT}/expediente-grupo.zip`;
+  await dz.saveAs(fz);
+  ok(dz.suggestedFilename() === `GRP-${sufijo}.zip`, `El .zip se llama con el código del grupo (${dz.suggestedFilename()})`);
+  const nombresZip = execFileSync('python3', ['-I', '-c', 'import sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); assert z.testzip() is None; print("\\n".join(z.namelist()))', fz]).toString();
+  ok(nombresZip.includes('1 Documentos del evento/01 Contrato del evento') && nombresZip.includes('/Indice del expediente.xlsx'), 'El .zip trae los documentos del evento y el índice');
+  ok(/3 Huespedes\/EXP-\d+ Carter, Emily\/1 Pasaporte\.jpg/.test(nombresZip), 'El .zip trae una carpeta por huésped con sus fotos');
+  ok(nombresZip.includes('2 Documentos de Credito/'), 'El .zip trae los documentos de Crédito');
+  await page.click('[data-z="cerrar"]');
+  await page.reload();
+  await page.waitForSelector('text=Descargó el expediente completo del grupo en .zip');
+  ok(true, 'Descargar el .zip queda en la bitácora del grupo');
 
   // Bitácora general con filtros y Excel.
   await page.click('a.tab:has-text("Bitácora")');

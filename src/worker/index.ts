@@ -639,6 +639,50 @@ app.get('/api/grupos/:id/impresion', async (c) => {
   return c.json({ grupo, expedientes, documentos: [...vigentes.values()] });
 });
 
+// Lista de todos los documentos del grupo para armar el .zip del expediente completo
+// (Impuestos y Administración): evento, Crédito y cada huésped con todas sus versiones.
+// La página descarga los archivos uno por uno con las rutas de siempre y arma el .zip en el
+// equipo, así un grupo de 500 huéspedes no depende de una sola petición enorme.
+async function todas(db: Db, consulta: string): Promise<any[]> {
+  let filas: any[] = [];
+  // Supabase entrega máximo 1,000 filas por consulta.
+  for (let off = 0; ; off += 1000) {
+    const lote = await db.select(`${consulta}&limit=1000&offset=${off}`);
+    filas = filas.concat(lote);
+    if (lote.length < 1000) return filas;
+  }
+}
+
+app.get('/api/grupos/:id/paquete', async (c) => {
+  exigir(c, 'impuestos', 'admin');
+  const id = uuid(c.req.param('id'));
+  const db = c.get('db');
+  const [grupo] = await db.select(`grupos?id=eq.${id}&select=id,folio,nombre,empresa,codigo_opera,llegada,salida`);
+  if (!grupo) throw new ErrorApi(404, 'El grupo no existe.');
+  const [expedientes, docs_grupo, docs_credito, evento, folios_maestra] = await Promise.all([
+    todas(db, `expedientes?grupo_id=eq.${id}&select=id,folio,nombre,apellidos,nacionalidad,pasaporte,pasaporte_vence,estado&order=apellidos.asc,nombre.asc,id.asc`),
+    todas(db, `documentos_grupo?grupo_id=eq.${id}&select=id,tipo,nombre_archivo,mime,bytes,subido_por_nombre,subido_en&order=subido_en.asc,id.asc`),
+    todas(db, `documentos_credito?grupo_id=eq.${id}&select=id,tipo,descripcion,nombre_archivo,mime,bytes,subido_por_nombre,subido_en&order=subido_en.asc,id.asc`),
+    db.select(`evento_grupo?grupo_id=eq.${id}&select=tipo,organizador,pais,id_fiscal&order=ts.desc,id.desc&limit=1`),
+    db.select(`folios_maestra_grupo?grupo_id=eq.${id}&select=folio&order=ts.desc,id.desc&limit=1`),
+  ]);
+  let documentos: any[] = [];
+  const ids = expedientes.map((e: any) => e.id);
+  // En bloques para no armar URLs enormes en grupos de 500 huéspedes.
+  for (let i = 0; i < ids.length; i += 100) {
+    const lote = ids.slice(i, i + 100).join(',');
+    documentos = documentos.concat(await todas(db,
+      `documentos?expediente_id=in.(${lote})&select=id,expediente_id,tipo,version,fmm_tipo,mime,bytes,capturado_en&order=expediente_id.asc,tipo.asc,version.desc`,
+    ));
+  }
+  await db.rpc('anotar_descarga', { p_grupo: id, p_que: 'zip' });
+  return c.json({
+    grupo, expedientes, documentos, docs_grupo, docs_credito,
+    evento: evento[0] || null, folio_maestra: folios_maestra[0]?.folio || null,
+    descargado: { por: c.get('perfil').nombre, en: new Date().toISOString() },
+  });
+});
+
 app.get('/api/documentos/:id/imagen', async (c) => {
   exigir(c, ...PC);
   const id = uuid(c.req.param('id'));
