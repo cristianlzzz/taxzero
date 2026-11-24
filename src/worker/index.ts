@@ -178,20 +178,29 @@ app.get('/api/grupos', async (c) => {
   exigir(c, ...PC);
   let grupos = await c.get('db').select('resumen_grupos?select=*&order=llegada.desc,creado_en.desc');
   // Front Desk no ve el reporte de Avance: se le quitan los datos de expedientes detenidos.
-  // Front Desk solo ve grupos en casa o por llegar (salida de hoy en adelante, hora de Cancún).
+  // Front Desk solo ve grupos en casa o por llegar (salida de hoy en adelante, hora de Cancún)
+  // y no ve grupos cancelados.
   if (c.get('perfil').rol === 'frontdesk') {
     const hoy = hoyLocal();
-    grupos = grupos.filter((g: any) => g.salida >= hoy).map(({ detenidos: _d, ultimo_movimiento: _u, ...g }: any) => g);
+    grupos = grupos.filter((g: any) => g.salida >= hoy && !g.cancelado).map(({ detenidos: _d, ultimo_movimiento: _u, ...g }: any) => g);
   }
   return c.json({ grupos });
 });
 
-// Front Desk no puede abrir ni trabajar en grupos cuya salida oficial ya pasó.
+// Front Desk no puede abrir ni trabajar en grupos cuya salida oficial ya pasó ni en grupos cancelados.
 const GRUPO_CERRADO_FD = 'Este grupo ya salió. Front Desk solo ve grupos en casa o por llegar.';
+const GRUPO_CANCELADO_FD = 'Este grupo fue cancelado. Front Desk solo ve grupos en casa o por llegar.';
+async function ultimaCancelacion(db: any, grupoId: string) {
+  const [u] = await db.select(
+    `cancelaciones_grupo?grupo_id=eq.${grupoId}&select=accion,motivo,registrado_por_nombre,ts&order=ts.desc,id.desc&limit=1`,
+  );
+  return u && u.accion === 'cancelar' ? u : null;
+}
 async function exigirGrupoVigenteFD(c: any, grupoId: string) {
   if (c.get('perfil').rol !== 'frontdesk') return;
   const [g] = await c.get('db').select(`grupos?id=eq.${grupoId}&select=salida`);
   if (g && g.salida < hoyLocal()) throw new ErrorApi(403, GRUPO_CERRADO_FD);
+  if (g && (await ultimaCancelacion(c.get('db'), grupoId))) throw new ErrorApi(403, GRUPO_CANCELADO_FD);
 }
 async function exigirExpedienteVigenteFD(c: any, expId: string) {
   if (c.get('perfil').rol !== 'frontdesk') return;
@@ -240,6 +249,17 @@ app.post('/api/grupos/:id/datos', async (c) => {
   if (motivo.length < 3) throw new ErrorApi(400, 'Escribe el motivo del cambio.');
   const cambios = await c.get('db').rpc<number>('editar_grupo', { p_grupo: id, ...datosGrupo(b), p_motivo: motivo });
   return c.json({ cambios });
+});
+
+// Cancelar o reactivar un grupo. El motivo es obligatorio y todo queda en la bitácora.
+app.post('/api/grupos/:id/cancelacion', async (c) => {
+  exigir(c, 'grupos', 'admin');
+  const id = uuid(c.req.param('id'));
+  const b = await c.req.json().catch(() => ({}));
+  const motivo = texto(b.motivo, 500, false);
+  if (motivo.length < 3) throw new ErrorApi(400, b.accion === 'reactivar' ? 'Escribe el motivo de la reactivación.' : 'Escribe el motivo de la cancelación.');
+  await c.get('db').rpc(b.accion === 'reactivar' ? 'reactivar_grupo' : 'cancelar_grupo', { p_grupo: id, p_motivo: motivo });
+  return c.json({ ok: true });
 });
 
 async function registrarEvento(c: any, grupo: string, e: any) {
@@ -385,6 +405,8 @@ app.get('/api/grupos/:id', async (c) => {
   const [grupo] = await db.select(`grupos?id=eq.${id}&select=*`);
   if (!grupo) throw new ErrorApi(404, 'El grupo no existe.');
   if (c.get('perfil').rol === 'frontdesk' && grupo.salida < hoyLocal()) throw new ErrorApi(403, GRUPO_CERRADO_FD);
+  const cancelacion = await ultimaCancelacion(db, id);
+  if (c.get('perfil').rol === 'frontdesk' && cancelacion) throw new ErrorApi(403, GRUPO_CANCELADO_FD);
   const expedientes = await db.select(
     `expedientes?grupo_id=eq.${id}&select=id,folio,nombre,apellidos,nacionalidad,nacionalidad_codigo,pasaporte,pasaporte_vence,estado,recapturar,actualizado_en&order=actualizado_en.desc`,
   );
@@ -430,7 +452,7 @@ app.get('/api/grupos/:id', async (c) => {
   } else {
     evento = await db.select(`evento_grupo?grupo_id=eq.${id}&select=id,tipo,organizador,pais,ts&order=ts.asc,id.asc`);
   }
-  return c.json({ grupo, expedientes, codigos, montos, facturas, evento, docs_grupo, verificacion, riesgos, bitacora, docs_credito, folios_maestra });
+  return c.json({ grupo, cancelacion, expedientes, codigos, montos, facturas, evento, docs_grupo, verificacion, riesgos, bitacora, docs_credito, folios_maestra });
 });
 
 app.post('/api/grupos/:id/monto', async (c) => {
