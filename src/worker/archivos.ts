@@ -5,7 +5,7 @@
 // de ahí si no están en R2.
 import { Db, Env, ErrorApi } from './supabase';
 
-type Permiso = 'puede_subir_documento' | 'puede_subir_doc_grupo';
+type Permiso = 'puede_subir_documento' | 'puede_subir_doc_grupo' | 'puede_subir_doc_credito';
 
 export async function guardarArchivo(
   env: Env, db: Db, ruta: string, cuerpo: ArrayBuffer, tipo: string, permiso: Permiso, rechazo: string,

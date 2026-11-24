@@ -1,7 +1,7 @@
 // Pantallas de escritorio (PC): Grupos, Front Desk, Crédito, Impuestos y Administración.
 import qrcode from 'qrcode-generator';
 import {
-  CHECKS, CHECK_GRUPO, ROLES, DOCS, DOCS_GRUPO, DOC_ORDER, ESTADOS, FILE_ORDER, FMM_TIPOS, MOTIVOS, PAISES, PAISES_FREC, QUEUE, QUEUE_WORD,
+  CHECKS, CHECK_GRUPO, ROLES, DOCS, DOCS_CREDITO, DOCS_GRUPO, DOC_ORDER, ESTADOS, FILE_ORDER, FMM_TIPOS, MOTIVOS, PAISES, PAISES_FREC, QUEUE, QUEUE_WORD,
   RIESGOS, TIPOS_EVENTO,
 } from './catalogos.js';
 import { api, dateTxt, diasEntre, esc, fmt, folioExp, folioGrupo, hoyHotel, mmss } from './util.js';
@@ -306,6 +306,7 @@ function pantallaGrupo(datos) {
       </dl></div>
       ${rol() === 'frontdesk' ? '' : expedienteEvento(datos)}
       ${extraGrupo(g, montos, facturas)}
+      ${['credito', 'impuestos', 'admin'].includes(rol()) ? documentosCredito(datos) : ''}
       ${rol() === 'impuestos' ? verificacionGrupo(datos) : ''}
       <div class="seg" role="tablist" aria-label="Filtrar por estado">${filtros.map(([k, l]) => `<button class="tab" role="tab" data-a="filtro" data-k="${k}" aria-selected="${f === k}">${l}</button>`).join('')}</div>
       <div class="tablewrap"><table><thead><tr><th>Huésped</th><th>Nacionalidad</th><th>Pasaporte</th><th>Estado</th><th>Último cambio</th><th></th></tr></thead>
@@ -353,6 +354,35 @@ function expedienteEvento({ evento = [], docs_grupo: docs = [] }) {
     <p class="note">PDF o foto. El rooming list puede ir en Excel. Un archivo nuevo no reemplaza al anterior: los dos quedan guardados.</p>
     <div class="docrows">${filas}</div>
     <p class="err" id="up-err" hidden></p>
+  </div>`;
+}
+
+// Crédito: documentos que respaldan la devolución y folio de la cuenta maestra en Opera.
+// Impuestos y Administración los consultan; solo Crédito sube y registra.
+function documentosCredito({ docs_credito: docs = [], folios_maestra: folios = [] }) {
+  const sube = rol() === 'credito';
+  const filas = DOCS_CREDITO.map(([t, label, ayuda]) => {
+    const arch = docs.filter((d) => d.tipo === t).reverse();
+    const lista = arch.length
+      ? `<ul class="files">${arch.map((d, i) => `<li><a href="/api/documentos-credito/${d.id}/archivo" target="_blank" rel="noopener">${esc(d.nombre_archivo)}</a> <span class="note">${pesoTxt(d.bytes)} · ${fmt(d.subido_en)} · ${esc(d.subido_por_nombre)}${i && t !== 'extraordinario' ? ' · anterior' : ''}</span>${d.descripcion ? `<span class="note block">${esc(d.descripcion)}</span>` : ''}</li>`).join('')}</ul>`
+      : `<span class="note">${t === 'extraordinario' ? 'Ninguno' : 'Falta'}</span>`;
+    const acepta = t === 'autorizacion' ? '.pdf,.jpg,.jpeg,.png' : '.pdf,.xlsx,.xls,.jpg,.jpeg,.png';
+    let subir = '';
+    if (sube && t === 'extraordinario') subir = '<button class="btn sm" data-a="doc-extra">Agregar</button>';
+    else if (sube) subir = `<label class="btn sm" for="upc-${t}">${arch.length ? 'Subir otro' : 'Subir'}</label><input id="upc-${t}" class="file-hidden" type="file" accept="${acepta}" data-upc="${t}">`;
+    return `<div class="docrow ${arch.length ? 'ok' : ''}"><div class="docrow-t"><span class="dot" aria-hidden="true"></span><div><b>${label}</b><span class="note">${ayuda}</span></div></div>
+      <div class="docrow-f">${lista}</div><div class="docrow-a">${subir}</div></div>`;
+  }).join('');
+  const u = folios[folios.length - 1];
+  const anteriores = folios.slice(0, -1).reverse();
+  return `<div class="card flat stack">
+    <div class="row space-between"><div><p class="eyebrow">Crédito</p><h2>Devolución del grupo</h2></div>
+      ${sube ? `<button class="btn ${u ? '' : 'primary'}" data-a="folio-maestra">${u ? 'Registrar otro folio' : 'Registrar folio de Opera'}</button>` : ''}</div>
+    <dl class="info"><div><dt>Folio de Opera de la cuenta maestra con la devolución</dt><dd>${u ? `<span class="mono">${esc(u.folio)}</span> <span class="note">· ${fmt(u.ts)} · ${esc(u.registrado_por_nombre)}</span>${u.nota ? `<span class="note block">${esc(u.nota)}</span>` : ''}` : '<span class="muted">Sin registrar</span>'}
+      ${anteriores.length ? `<span class="note block">Anteriores: ${anteriores.map((f) => esc(f.folio)).join(', ')}</span>` : ''}</dd></div></dl>
+    <div class="row space-between"><h3>Documentos de Crédito</h3><span class="note">Un archivo nuevo no reemplaza al anterior</span></div>
+    <div class="docrows">${filas}</div>
+    <p class="err" id="upc-err" hidden></p>
   </div>`;
 }
 
@@ -840,6 +870,23 @@ function modalHTML() {
       <p class="err" id="eg-err" hidden></p>
       <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Guardar cambios</button></div></form>`;
   }
+  if (m.kind === 'folio-maestra') {
+    inner = `<form class="modal" data-form="folio-maestra" novalidate><h2>Folio de Opera de la cuenta maestra</h2><p class="muted">${esc(vista.datos.grupo.nombre)}</p>
+      <div class="field"><label for="fm-folio">Folio de la cuenta maestra con la devolución</label><input type="text" id="fm-folio" maxlength="60" required autocomplete="off"></div>
+      <div class="field"><label for="fm-nota">Nota <span class="muted">(opcional)</span></label><textarea id="fm-nota" maxlength="500" placeholder="Ej. Ajuste aplicado el 28 nov"></textarea></div>
+      ${(vista.datos.folios_maestra || []).length ? '<p class="note">El folio anterior seguirá visible.</p>' : ''}
+      <p class="err" id="fm-err" hidden></p>
+      <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Registrar folio</button></div></form>`;
+  }
+  if (m.kind === 'doc-extra') {
+    inner = `<form class="modal" data-form="doc-extra" novalidate><h2>Documento extraordinario</h2><p class="muted">${esc(vista.datos.grupo.nombre)}</p>
+      <div class="field"><label for="dx-desc">¿Qué es y por qué se agrega?</label><textarea id="dx-desc" maxlength="500" required placeholder="Ej. Nota de crédito por cargo duplicado en la cuenta maestra"></textarea></div>
+      <div class="field"><label for="dx-file">Archivo</label><input type="file" id="dx-file" accept=".pdf,.xlsx,.xls,.jpg,.jpeg,.png" required>
+        <span class="note">PDF, Excel o foto, de menos de 20 MB.</span></div>
+      <p class="note">La descripción queda junto al archivo y en la bitácora del grupo.</p>
+      <p class="err" id="dx-err" hidden></p>
+      <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Subir documento</button></div></form>`;
+  }
   if (m.kind === 'riesgo') {
     const R = RIESGOS[m.k];
     inner = `<form class="modal" data-form="riesgo" novalidate><h2>${R.label} · ${R.sub}</h2><p class="muted">${esc(vista.datos.grupo.nombre)}</p>
@@ -1013,6 +1060,10 @@ document.addEventListener('click', (ev) => {
     case 'evento':
       abrirModal({ kind: 'evento' });
       break;
+    case 'folio-maestra':
+    case 'doc-extra':
+      abrirModal({ kind: d.a });
+      break;
     case 'editgrupo':
       abrirModal({ kind: 'editgrupo' });
       break;
@@ -1080,6 +1131,8 @@ document.addEventListener('submit', (ev) => {
   if (f.dataset.form === 'factura') enviarGrupo(f, 'factura', { folio: f.querySelector('#fa-folio').value.trim(), tipo: f.querySelector('#fa-tipo').value }, 'Folio registrado.');
   if (f.dataset.form === 'evento') enviarEvento(f);
   if (f.dataset.form === 'editgrupo') enviarEdicionGrupo(f);
+  if (f.dataset.form === 'folio-maestra') enviarGrupo(f, 'folio-maestra', { folio: f.querySelector('#fm-folio').value.trim(), nota: f.querySelector('#fm-nota').value.trim() || ' ' }, 'Folio registrado.');
+  if (f.dataset.form === 'doc-extra') enviarDocExtra(f);
   if (f.dataset.form === 'riesgo') enviarGrupo(f, 'riesgo', { nivel: state.modal.k, nota: f.querySelector('#ri-nota').value.trim() }, 'Riesgo registrado.');
   if (f.dataset.form === 'vence') enviarVence(f);
   if (f.dataset.form === 'miclave') enviarMiClave(f);
@@ -1114,6 +1167,8 @@ document.addEventListener('change', (ev) => {
   }
   const vg = ev.target.closest?.('[data-vg]');
   if (vg) marcarPunto(vg);
+  const upc = ev.target.closest?.('[data-upc]');
+  if (upc) subirDocCredito(upc);
   const up = ev.target.closest?.('[data-up]');
   if (up) subirDocGrupo(up);
   if (/^(a|ev)-pais$/.test(ev.target.id)) {
@@ -1303,6 +1358,73 @@ async function enviarVence(f) {
 }
 
 const MIME = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', xls: 'application/vnd.ms-excel' };
+
+// Sube un archivo de Crédito. Devuelve el mensaje de error o null si se guardó.
+async function enviarArchivoCredito(file, tipo, descripcion = '') {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  const mime = MIME[ext] || file.type;
+  if (!Object.values(MIME).includes(mime)) return 'Ese tipo de archivo no se acepta. Usa PDF, Excel, JPG o PNG.';
+  if (tipo === 'autorizacion' && ext.startsWith('xls')) return 'Sube la autorización firmada en PDF o como foto (JPG o PNG).';
+  if (file.size > 20 * 1024 * 1024) return 'El archivo debe pesar menos de 20 MB.';
+  try {
+    const blob = new Blob([await file.arrayBuffer()], { type: mime });
+    const q = new URLSearchParams({ tipo, nombre: file.name.slice(0, 200) });
+    if (descripcion) q.set('descripcion', descripcion);
+    await api('POST', `/api/grupos/${vista.datos.grupo.id}/documentos-credito?${q}`, blob);
+    return null;
+  } catch (e) {
+    return e.message;
+  }
+}
+
+async function subirDocCredito(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const label = input.previousElementSibling;
+  if (label) {
+    label.classList.add('is-disabled');
+    label.textContent = 'Subiendo…';
+  }
+  const error = await enviarArchivoCredito(file, input.dataset.upc);
+  if (!error) {
+    toast('Archivo guardado.');
+    return recargar();
+  }
+  if (label) {
+    label.classList.remove('is-disabled');
+    label.textContent = 'Subir';
+  }
+  input.value = '';
+  const err = document.getElementById('upc-err');
+  if (err) {
+    err.hidden = false;
+    err.textContent = error;
+  } else toast(error);
+}
+
+async function enviarDocExtra(f) {
+  const err = f.querySelector('#dx-err');
+  const desc = f.querySelector('#dx-desc').value.trim();
+  const file = f.querySelector('#dx-file').files?.[0];
+  const mostrar = (m) => {
+    err.hidden = false;
+    err.textContent = m;
+  };
+  if (desc.length < 3) return mostrar('Describe qué es el documento.');
+  if (!file) return mostrar('Elige el archivo.');
+  const btn = f.querySelector('button[type=submit]');
+  btn.disabled = true;
+  btn.textContent = 'Subiendo…';
+  const error = await enviarArchivoCredito(file, 'extraordinario', desc);
+  if (error) {
+    btn.disabled = false;
+    btn.textContent = 'Subir documento';
+    return mostrar(error);
+  }
+  state.modal = null;
+  toast('Documento guardado.');
+  recargar();
+}
 
 async function subirDocGrupo(input) {
   const file = input.files?.[0];

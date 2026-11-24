@@ -40,6 +40,13 @@ export const DOCS_GRUPO = [
   ['constancias', 'Gafetes o constancias de participación', 'Si el organizador las entrega en un solo archivo.'],
   ['rooming', 'Rooming list', 'En Excel, tal como lo envía el organizador.'],
 ];
+// Documentos que sube Crédito por grupo. La plataforma no calcula: solo guarda lo que Crédito ya preparó.
+export const DOCS_CREDITO = [
+  ['autorizacion', 'Autorización de la devolución', 'Firmada por Impuestos y Cuentas por Cobrar. PDF o foto.'],
+  ['conciliacion', 'Cálculo o conciliación', 'El archivo con el que Crédito calculó la devolución. Excel o PDF.'],
+  ['reporte_opera', 'Reportes de Opera con el ajuste', 'Reportes que muestran la aplicación del ajuste por la devolución.'],
+  ['extraordinario', 'Documentos extraordinarios', 'Para situaciones fuera de lo normal. Cada archivo lleva una descripción.'],
+];
 export const RIESGOS = {
   bajo: { label: 'Riesgo bajo', sub: 'Procede', ej: 'Evento claro, agenda formal, salones documentados, contrato, lista completa, pago extranjero.' },
   medio: { label: 'Riesgo medio', sub: 'Cuestionable', ej: 'Habitaciones compartidas con una sola firma, agenda débil, lista parcial o servicios mezclados.' },
