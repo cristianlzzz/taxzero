@@ -159,3 +159,11 @@ O conecta este repositorio en Cloudflare (Workers → Create → Import a reposi
   reabrir esos expedientes para corregirlas.
 - No se puede dar de alta un grupo con llegada anterior a hoy (se valida en la página, en el servidor y en la base).
 - Front Desk no ve la pestaña Avance ni los datos de expedientes detenidos.
+
+## Documentos de Crédito por grupo
+
+- En la ficha del grupo, Crédito sube la autorización de la devolución (firmada por Impuestos y Cuentas por Cobrar),
+  el cálculo o conciliación, los reportes de Opera con el ajuste y documentos extraordinarios (con descripción
+  obligatoria), y registra el folio de Opera de la cuenta maestra con la devolución.
+- Los ven Crédito, Impuestos y Administración. Nada se reemplaza ni se borra; todo queda en la bitácora del grupo
+  (migración 0013). El rooming list sigue en los documentos generales del grupo.

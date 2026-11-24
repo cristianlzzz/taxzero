@@ -15,6 +15,7 @@ const PC: Rol[] = ['admin', 'grupos', 'frontdesk', 'credito', 'impuestos'];
 const TIPOS = ['pasaporte', 'regcard', 'pago', 'fmm', 'constancia'] as const;
 const TIPOS_EVENTO = ['congreso', 'convencion', 'exposicion', 'feria'];
 const DOCS_GRUPO = ['contrato', 'agenda', 'salones', 'asistentes', 'organizador', 'constancias', 'rooming'];
+const DOCS_CREDITO = ['autorizacion', 'conciliacion', 'reporte_opera', 'extraordinario'];
 const MAX_DOC_GRUPO = 20 * 1024 * 1024;
 // Tipos de archivo aceptados para documentos del evento, con su firma de inicio.
 const ARCHIVOS: Record<string, { ext: string; firma: number[] }> = {
@@ -270,6 +271,61 @@ app.post('/api/grupos/:id/documentos', async (c) => {
   return c.json({ id: doc }, 201);
 });
 
+// Documentos de Crédito del grupo: autorización, conciliación, reportes de Opera y extraordinarios.
+app.post('/api/grupos/:id/documentos-credito', async (c) => {
+  exigir(c, 'credito');
+  const id = uuid(c.req.param('id'));
+  const tipo = c.req.query('tipo') || '';
+  if (!DOCS_CREDITO.includes(tipo)) throw new ErrorApi(400, 'Tipo de documento inválido.');
+  const nombre = texto(c.req.query('nombre'), 200);
+  const descripcion = texto(c.req.query('descripcion'), 500, false);
+  if (tipo === 'extraordinario' && descripcion.length < 3) throw new ErrorApi(400, 'Describe qué es el documento extraordinario.');
+  const mime = (c.req.header('content-type') || '').split(';')[0].trim();
+  const a = ARCHIVOS[mime];
+  const esExcel = a?.ext === 'xlsx' || a?.ext === 'xls';
+  if (!a || (esExcel && tipo === 'autorizacion')) {
+    throw new ErrorApi(415, tipo === 'autorizacion' ? 'Sube la autorización firmada en PDF o como foto (JPG o PNG).' : 'Sube el documento en PDF, Excel o foto (JPG o PNG).');
+  }
+  const cuerpo = await c.req.arrayBuffer();
+  if (cuerpo.byteLength < 100 || cuerpo.byteLength > MAX_DOC_GRUPO) {
+    throw new ErrorApi(413, 'El archivo debe pesar menos de 20 MB.');
+  }
+  const ini = new Uint8Array(cuerpo, 0, 4);
+  if (!a.firma.every((b, i) => ini[i] === b)) throw new ErrorApi(415, 'El archivo no corresponde a su tipo. Vuelve a exportarlo.');
+  const ruta = `cred/${id}/${tipo}/${crypto.randomUUID()}.${a.ext}`;
+  const db = c.get('db');
+  await guardarArchivo(c.env, db, ruta, cuerpo, mime, 'puede_subir_doc_credito', 'No se pudo guardar el archivo. Intenta de nuevo.');
+  const doc = await db.rpc<string>('registrar_doc_credito', {
+    p_grupo: id, p_tipo: tipo, p_descripcion: descripcion || null, p_ruta: ruta, p_nombre: nombre, p_mime: mime, p_bytes: cuerpo.byteLength,
+  });
+  return c.json({ id: doc }, 201);
+});
+
+app.get('/api/documentos-credito/:id/archivo', async (c) => {
+  exigir(c, 'admin', 'credito', 'impuestos');
+  const id = uuid(c.req.param('id'));
+  const db = c.get('db');
+  const [doc] = await db.select(`documentos_credito?id=eq.${id}&select=ruta,mime,nombre_archivo`);
+  if (!doc) throw new ErrorApi(404, 'El documento no existe.');
+  const cuerpo = await leerArchivo(c.env, db, doc.ruta);
+  const enLinea = doc.mime === 'application/pdf' || doc.mime.startsWith('image/');
+  return new Response(cuerpo, {
+    headers: {
+      'content-type': doc.mime,
+      'content-disposition': `${enLinea ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(doc.nombre_archivo)}`,
+      'cache-control': 'private, max-age=3600',
+    },
+  });
+});
+
+app.post('/api/grupos/:id/folio-maestra', async (c) => {
+  exigir(c, 'credito');
+  const id = uuid(c.req.param('id'));
+  const b = await c.req.json().catch(() => ({}));
+  await c.get('db').rpc('registrar_folio_maestra', { p_grupo: id, p_folio: texto(b.folio, 60), p_nota: texto(b.nota, 500, false) || null });
+  return c.json({ ok: true }, 201);
+});
+
 app.get('/api/documentos-grupo/:id/archivo', async (c) => {
   exigir(c, 'admin', 'grupos', 'credito', 'impuestos');
   const id = uuid(c.req.param('id'));
@@ -337,6 +393,14 @@ app.get('/api/grupos/:id', async (c) => {
   let verificacion: any[] = [];
   let riesgos: any[] = [];
   let bitacora: any[] = [];
+  let docs_credito: any[] = [];
+  let folios_maestra: any[] = [];
+  if (['admin', 'credito', 'impuestos'].includes(c.get('perfil').rol)) {
+    [docs_credito, folios_maestra] = await Promise.all([
+      db.select(`documentos_credito?grupo_id=eq.${id}&select=id,tipo,descripcion,nombre_archivo,mime,bytes,subido_por_nombre,subido_en&order=subido_en.asc`),
+      db.select(`folios_maestra_grupo?grupo_id=eq.${id}&select=id,folio,nota,registrado_por_nombre,ts&order=ts.asc,id.asc`),
+    ]);
+  }
   if (c.get('perfil').rol !== 'frontdesk') {
     [montos, facturas, evento, docs_grupo, verificacion, riesgos, bitacora] = await Promise.all([
       db.select(`montos_grupo?grupo_id=eq.${id}&select=id,valor,nota,registrado_por_nombre,ts&order=ts.asc,id.asc`),
@@ -350,7 +414,7 @@ app.get('/api/grupos/:id', async (c) => {
   } else {
     evento = await db.select(`evento_grupo?grupo_id=eq.${id}&select=id,tipo,organizador,pais,ts&order=ts.asc,id.asc`);
   }
-  return c.json({ grupo, expedientes, codigos, montos, facturas, evento, docs_grupo, verificacion, riesgos, bitacora });
+  return c.json({ grupo, expedientes, codigos, montos, facturas, evento, docs_grupo, verificacion, riesgos, bitacora, docs_credito, folios_maestra });
 });
 
 app.post('/api/grupos/:id/monto', async (c) => {
