@@ -496,6 +496,37 @@ app.post('/api/grupos/:id/huespedes', async (c) => {
   return c.json({ id, codigo }, 201);
 });
 
+// Alta de varios huéspedes desde la rooming list. La página ya leyó el archivo y mostró la
+// vista previa; aquí llegan solo las filas confirmadas. No se recibe habitación ni reservación.
+app.post('/api/grupos/:id/importar', async (c) => {
+  exigir(c, 'grupos', 'frontdesk', 'admin');
+  const grupo = uuid(c.req.param('id'));
+  await exigirGrupoVigenteFD(c, grupo);
+  const b = await c.req.json().catch(() => ({}));
+  if (!Array.isArray(b.filas) || !b.filas.length) throw new ErrorApi(400, 'No hay huéspedes para dar de alta.');
+  if (b.filas.length > 1500) throw new ErrorApi(400, 'Son demasiadas filas para una sola importación (máximo 1,500).');
+  const filas = b.filas.map((f: any, i: number) => {
+    const nac = texto(f?.nacionalidad_codigo, 3).toUpperCase();
+    if (!/^[A-Z]{3}$/.test(nac)) throw new ErrorApi(400, `Fila ${f?.fila ?? i + 1}: elige la nacionalidad de la lista.`);
+    return {
+      fila: Number.isInteger(f.fila) ? f.fila : i + 1,
+      nombre: texto(f.nombre, 120),
+      apellidos: texto(f.apellidos, 120),
+      nac_codigo: nac,
+      nac_nombre: texto(f.nacionalidad, 80),
+      pasaporte: texto(f.pasaporte, 30, false),
+      pasaporte_vence: f.pasaporte_vence ? fecha(f.pasaporte_vence) : '',
+      duplicado_ok: f.duplicado_ok === true,
+    };
+  });
+  const r = await c.get('db').rpc<any>('importar_huespedes', {
+    p_grupo: grupo,
+    p_archivo: texto(b.archivo, 200, false),
+    p_filas: filas,
+  });
+  return c.json(r, 201);
+});
+
 // ------------------------------------------------------------------ expedientes
 app.get('/api/expedientes/:id', async (c) => {
   exigir(c, ...PC);

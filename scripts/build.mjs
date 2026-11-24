@@ -1,5 +1,6 @@
 // Empaqueta el código de la página (src/client) en public/app.js.
 import { build } from 'esbuild';
+import { copyFileSync, mkdirSync } from 'node:fs';
 
 await build({
   entryPoints: ['src/client/main.js'],
@@ -14,3 +15,7 @@ await build({
   outdir: 'public',
   logLevel: 'info',
 });
+
+// Lector de PDF (rooming list de Opera): su proceso en segundo plano se sirve tal cual.
+mkdirSync('public/js', { recursive: true });
+copyFileSync('node_modules/pdfjs-dist/build/pdf.worker.min.mjs', 'public/js/pdf.worker.min.mjs');

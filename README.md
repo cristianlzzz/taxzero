@@ -65,6 +65,18 @@ información, y nada se borra.
 - **Imprimir expediente**: portada con los datos del huésped y su bitácora, y una hoja por documento en el orden del
   archivo físico (versión vigente de cada uno).
 
+## Alta de huéspedes desde la rooming list
+
+- En la página del grupo, **Dar de alta desde rooming list** (Grupos, Front Desk y Administración). También se ofrece al
+  subir la rooming list en *Documentos del evento*. El alta manual de un huésped sigue igual.
+- Acepta el reporte *Group Rooming List* de Opera en PDF, Excel (.xlsx) o CSV. El archivo se lee en el navegador.
+- Vista previa antes de confirmar: nacionalidad para todas las filas que no la traen (Opera no la incluye) y cambio una
+  por una, nombres editables, reservaciones repetidas de una misma persona, huéspedes que ya están en el grupo,
+  reservaciones canceladas o no show, y filas con problemas (sin nombre, con números, sin nacionalidad).
+- Acompañantes ("Accompanying Names") solo si se activa la opción.
+- No se guardan número de habitación ni número de reservación. Cada alta queda en la bitácora con el nombre del archivo,
+  y la importación en la bitácora del grupo. Si una fila falla, no entra ninguna.
+
 Pendiente: aviso de privacidad, respaldo nocturno y contraseñas definitivas antes de usar datos reales.
 
 ## Cómo está hecho

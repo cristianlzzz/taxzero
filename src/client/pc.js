@@ -6,6 +6,7 @@ import {
 } from './catalogos.js';
 import { api, dateTxt, diasEntre, esc, fmt, folioExp, folioGrupo, hoyHotel, mmss } from './util.js';
 import { PIE, header, state, toast } from './main.js';
+import * as importar from './importar.js';
 
 let root;
 let vista = null; // { ruta, datos, error }
@@ -13,6 +14,8 @@ let carga = 0;
 const ui = { filtro: {}, ver: {}, checks: {}, tablero: null, buscar: '', anio: '', impSolo: '' };
 
 const rol = () => state.perfil.rol;
+// Dar de alta desde la rooming list: Grupos (que recibe el archivo), Front Desk y Administración.
+const puedeImportar = () => ['grupos', 'frontdesk', 'admin'].includes(rol());
 const cola = () => QUEUE[rol()] || [];
 
 // ------------------------------------------------------------------ rutas
@@ -25,6 +28,7 @@ function rutaActual() {
   if (h === '/bitacora') return { s: 'bitacora' };
   if ((m = h.match(/^\/expedientes\/([0-9a-f-]{36})\/imprimir$/))) return { s: 'imprimir', id: m[1] };
   if ((m = h.match(/^\/grupos\/([0-9a-f-]{36})\/imprimir$/))) return { s: 'imprimirgrupo', id: m[1] };
+  if ((m = h.match(/^\/grupos\/([0-9a-f-]{36})\/importar$/))) return { s: 'importar', id: m[1] };
   if ((m = h.match(/^\/grupos\/([0-9a-f-]{36})$/))) return { s: 'grupo', id: m[1] };
   if ((m = h.match(/^\/expedientes\/([0-9a-f-]{36})$/))) return { s: 'exp', id: m[1] };
   return { s: 'grupos' };
@@ -43,7 +47,9 @@ export async function montar(el) {
     if (e.status === 401) return;
     vista.error = e.message;
   }
-  if (n === carga) pintar();
+  if (n !== carga) return;
+  if (vista.datos && ruta.s === 'importar') importar.alEntrar(vista.datos);
+  pintar();
 }
 
 async function recargar(mantenerScroll = true) {
@@ -62,6 +68,10 @@ async function recargar(mantenerScroll = true) {
 function cargar(ruta) {
   if (ruta.s === 'grupos') return api('GET', '/api/grupos');
   if (ruta.s === 'grupo') return api('GET', `/api/grupos/${ruta.id}`);
+  if (ruta.s === 'importar') {
+    if (!puedeImportar()) return Promise.reject(new Error('Tu área no da de alta huéspedes.'));
+    return api('GET', `/api/grupos/${ruta.id}`);
+  }
   if (ruta.s === 'exp') return api('GET', `/api/expedientes/${ruta.id}`);
   if (ruta.s === 'usuarios') return api('GET', '/api/usuarios');
   if (ruta.s === 'avance') {
@@ -84,6 +94,7 @@ function pintar() {
   else if (!vista.datos) body = '<div class="loading"><span class="spinner"></span>Cargando…</div>';
   else if (vista.ruta.s === 'alta') body = altaGrupo();
   else if (vista.ruta.s === 'grupo') body = pantallaGrupo(vista.datos);
+  else if (vista.ruta.s === 'importar') body = importar.pantallaImportar(vista.datos, crumbs);
   else if (vista.ruta.s === 'exp') body = pantallaExpediente(vista.datos);
   else if (vista.ruta.s === 'usuarios') body = pantallaUsuarios(vista.datos);
   else if (vista.ruta.s === 'avance') body = pantallaAvance(vista.datos);
@@ -326,6 +337,7 @@ function pantallaGrupo(datos) {
     <section class="page-head"><div><p class="eyebrow mono">${esc(g.codigo_opera || folioGrupo(g.folio))}</p><h1>${esc(g.nombre)}</h1></div>
       <div class="row">${['impuestos', 'admin'].includes(rol()) && expedientes.length ? `<a class="btn" href="#/grupos/${g.id}/imprimir">Imprimir expedientes del grupo</a>` : ''}
       ${rol() !== 'frontdesk' && expedientes.length ? `<a class="btn" href="/api/grupos/${g.id}/excel" data-descarga>Descargar en Excel</a>` : ''}
+      ${puedeImportar() && !cancelado ? `<a class="btn ${esFD ? '' : 'primary'}" href="#/grupos/${g.id}/importar">Dar de alta desde rooming list</a>` : ''}
       ${esFD ? `<button class="btn primary" data-a="altahues">Dar de alta un huésped</button>` : ''}</div></section>
     <div class="stack">
       ${cancelado ? `<div class="notice cancelado"><b>Grupo cancelado</b> el ${fmt(cancelado.ts)} por ${esc(cancelado.registrado_por_nombre)}. Motivo: ${esc(cancelado.motivo)}<br>Se conserva toda su información. No se pueden dar de alta huéspedes ni generar QR${esGrupos ? ' mientras no lo reactives' : ''}.</div>` : ''}
@@ -343,7 +355,7 @@ function pantallaGrupo(datos) {
       ${rol() === 'impuestos' ? verificacionGrupo(datos) : ''}
       <div class="seg" role="tablist" aria-label="Filtrar por estado">${filtros.map(([k, l]) => `<button class="tab" role="tab" data-a="filtro" data-k="${k}" aria-selected="${f === k}">${l}</button>`).join('')}</div>
       <div class="tablewrap"><table><thead><tr><th>Huésped</th><th>Nacionalidad</th><th>Pasaporte</th><th>Estado</th><th>Último cambio</th><th></th></tr></thead>
-      <tbody>${filas || `<tr><td colspan="6" class="empty">${expedientes.length ? 'Ningún expediente con este filtro.' : 'Aún no hay huéspedes en este grupo. Front Desk los da de alta desde su PC.'}</td></tr>`}</tbody></table></div>
+      <tbody>${filas || `<tr><td colspan="6" class="empty">${expedientes.length ? 'Ningún expediente con este filtro.' : 'Aún no hay huéspedes en este grupo. Se dan de alta desde la rooming list o uno por uno desde Front Desk.'}</td></tr>`}</tbody></table></div>
       ${datos.bitacora?.length ? `<div class="card flat stack"><div class="row space-between"><h3>Bitácora del grupo</h3><span class="note">No se puede editar ni borrar</span></div><ol class="log">${datos.bitacora.map(lineaLog).join('')}</ol></div>` : ''}
     </div>`;
 }
@@ -892,6 +904,12 @@ function modalHTML() {
       <p class="err" id="h-err" hidden></p>
       <div class="row end"><button type="button" class="btn" data-a="cerrar-modal">Cancelar</button><button type="submit" class="btn primary">Dar de alta</button></div></form>`;
   }
+  if (m.kind === 'ofrecer-import') {
+    inner = `<div class="modal" role="dialog" aria-label="Dar de alta desde la rooming list"><h2>¿Dar de alta a los huéspedes de esta rooming list?</h2>
+      <p class="muted">${esc(m.file.name)}</p>
+      <p>Verás una vista previa antes de confirmar: ahí eliges la nacionalidad y revisas las filas repetidas o con problemas.</p>
+      <div class="row end"><button class="btn" data-a="cerrar-modal">Ahora no</button><button class="btn primary" data-a="ir-import">Ver vista previa</button></div></div>`;
+  }
   if (m.kind === 'qr') {
     const restante = new Date(m.vence_en).getTime() - Date.now();
     inner = `<div class="modal" role="dialog" aria-label="Código de captura"><h2>Código de captura</h2>
@@ -1131,6 +1149,7 @@ document.addEventListener('click', (ev) => {
   const el = ev.target.closest('[data-a]');
   if (!el) return;
   const d = el.dataset;
+  if (vista?.ruta.s === 'importar' && vista.datos && importar.manejarClic(d, vista.datos)) return;
   switch (d.a) {
     case 'scrim':
       if (ev.target === el) cerrarModal();
@@ -1141,6 +1160,14 @@ document.addEventListener('click', (ev) => {
     case 'altahues':
       abrirModal({ kind: 'altahues' });
       break;
+    case 'ir-import': {
+      const file = state.modal?.file;
+      const id = vista.datos.grupo.id;
+      cerrarModal();
+      if (file) importar.prepararArchivo(file);
+      location.hash = `#/grupos/${id}/importar`;
+      break;
+    }
     case 'qr':
       mostrarQR(d.e);
       break;
@@ -1267,6 +1294,7 @@ document.addEventListener('submit', (ev) => {
 });
 
 document.addEventListener('change', (ev) => {
+  if (vista?.ruta.s === 'importar' && vista.datos && importar.manejarCambio(ev.target, vista.datos)) return;
   const c = ev.target.closest?.('[data-check]');
   if (c && vista?.datos?.expediente) {
     const id = vista.datos.expediente.id;
@@ -1592,7 +1620,11 @@ async function subirDocGrupo(input) {
     const blob = new Blob([await file.arrayBuffer()], { type: tipo });
     await api('POST', `/api/grupos/${vista.datos.grupo.id}/documentos?tipo=${input.dataset.up}&nombre=${encodeURIComponent(file.name.slice(0, 200))}`, blob);
     toast('Archivo guardado.');
-    recargar();
+    await recargar();
+    // Con la rooming list en PDF de Opera, Excel o CSV se ofrece dar de alta a los huéspedes.
+    if (input.dataset.up === 'rooming' && ['pdf', 'xlsx', 'csv'].includes(ext) && puedeImportar() && !vista.datos.cancelacion) {
+      abrirModal({ kind: 'ofrecer-import', file });
+    }
   } catch (e) {
     if (label) {
       label.classList.remove('is-disabled');
@@ -1621,3 +1653,5 @@ setInterval(() => {
     el.classList.toggle('low', l < 180000);
   });
 }, 1000);
+
+importar.configurar({ pintar: () => pintar(), recargar: () => recargar() });
