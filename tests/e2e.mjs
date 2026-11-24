@@ -580,8 +580,10 @@ const leerExcel = (f) => execFileSync('python3', ['-I', '-c',
   ok(!(await page.isVisible('.impreso >> text=Bitácora')), 'El PDF del grupo no incluye la bitácora');
   ok((await page.textContent('#imp-estado')).includes('listas') || (await page.textContent('#imp-estado')).includes('lista'), `Fotos cargadas antes de imprimir (${await page.textContent('#imp-estado')})`);
   await page.selectOption('#imp-solo', 'cerrado');
+  // En este punto el expediente de Carter fue reabierto por auditoría, así que no hay cerrados.
   const cerrados = await page.locator('.impreso .portada').count() - 1;
-  ok(cerrados >= 1 && cerrados <= portadas - 1, `Filtro de solo cerrados (${cerrados})`);
+  const estados = await page.locator('.impreso .portada:not(:first-child) dt:has-text("Estado") + dd').allInnerTexts();
+  ok(estados.every((t) => t === 'Cerrado') && (cerrados > 0 || await page.isVisible('text=Ningún expediente con este filtro')), `Filtro de solo cerrados (${cerrados})`);
   await page.selectOption('#imp-solo', '');
   await page.waitForSelector('#imp-btn:not([disabled])', { timeout: 60000 });
   await page.emulateMedia({ media: 'print' });
