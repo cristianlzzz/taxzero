@@ -582,6 +582,26 @@ app.post('/api/expedientes/:id/vencimiento', async (c) => {
   return c.json({ ok: true }, 201);
 });
 
+// Corrección de los datos del huésped. La base valida el estado y deja cada cambio en la bitácora.
+app.post('/api/expedientes/:id/datos', async (c) => {
+  exigir(c, 'frontdesk', 'grupos', 'admin');
+  const id = uuid(c.req.param('id'));
+  await exigirExpedienteVigenteFD(c, id);
+  const b = await c.req.json().catch(() => ({}));
+  const nac = texto(b.nacionalidad_codigo, 3).toUpperCase();
+  if (!/^[A-Z]{3}$/.test(nac)) throw new ErrorApi(400, 'Elige la nacionalidad de la lista.');
+  const cambios = await c.get('db').rpc<number>('editar_huesped', {
+    p_expediente: id,
+    p_nombre: texto(b.nombre, 120),
+    p_apellidos: texto(b.apellidos, 120),
+    p_nac_codigo: nac,
+    p_nac_nombre: texto(b.nacionalidad, 80),
+    p_pasaporte: texto(b.pasaporte, 30, false),
+    p_motivo: texto(b.motivo, 500),
+  });
+  return c.json({ cambios });
+});
+
 app.post('/api/expedientes/:id/codigo', async (c) => {
   exigir(c, 'frontdesk', 'admin');
   const id = uuid(c.req.param('id'));
