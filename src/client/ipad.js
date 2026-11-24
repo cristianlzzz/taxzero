@@ -2,7 +2,7 @@
 // de sus documentos; no muestra listas de huéspedes ni datos de otros expedientes.
 import { DOCS, FMM_TIPOS } from './catalogos.js';
 import { api, esc, mmss } from './util.js';
-import { NITIDEZ_MIN, procesarFoto } from './imagen.js';
+import { PROBLEMAS, procesarFoto } from './imagen.js';
 import { state } from './main.js';
 import qrcode from 'qrcode-generator';
 import { AVISO_BORRADOR, AVISO_HUESPED, AVISO_VERSION, RUTA_AVISO, avisoHTML } from './aviso.js';
@@ -154,18 +154,7 @@ function pantallaCaptura() {
       ${fd.errFoto ? `<div class="notice">${esc(fd.errFoto)}</div>` : ''}
       <div class="fd-actions"><button class="btn sm" data-a="skip">${esOpcional(t) ? 'Aún no lo tiene' : 'El huésped no lo trae'}</button><span></span></div>`;
   } else {
-    const borrosa = fd.cur.nitidez < NITIDEZ_MIN;
-    const subiendo = fd.subiendo;
-    stage = `<div class="preview"><img src="${fd.cur.url}" alt="Vista previa: ${D.label}"></div>
-      ${borrosa
-        ? '<div class="notice"><b>La foto parece borrosa.</b> Si el texto no se lee, Grupos pedirá recapturarla. Sostén el iPad firme, evita reflejos y vuelve a tomarla.</div>'
-        : '<p class="muted center">Revisa que se lea todo el documento y que no esté cortado.</p>'}
-      ${fd.errSubir ? `<div class="notice">${esc(fd.errSubir)}</div>` : ''}
-      <div class="fd-actions">
-        <label class="btn ${borrosa ? 'primary' : ''} lg ${subiendo ? 'is-disabled' : ''}" for="foto">${borrosa ? 'Repetir foto' : 'Repetir'}</label>
-        <input id="foto" class="file-hidden" type="file" accept="image/*" capture="environment" ${subiendo ? 'disabled' : ''}>
-        <button class="btn ${borrosa ? '' : 'primary'} lg" data-a="usar" ${subiendo ? 'disabled' : ''}>${subiendo ? 'Guardando…' : borrosa ? 'Usar de todos modos' : 'Usar esta foto'}</button>
-      </div>`;
+    stage = vistaPrevia(D);
   }
   return `<div class="fd-top"><div><p class="eyebrow">${esc(c.grupo)}</p><h1>${esc(c.nombre)} ${esc(c.apellidos)}</h1></div>${timerHTML()}</div>
     ${stepper}<h2>Paso ${fd.idx + 1} de ${c.pasos.length}: ${D.label}${esOpcional(t) ? ' <span class="muted">(opcional)</span>' : ''}</h2>${stage}`;
@@ -173,11 +162,68 @@ function pantallaCaptura() {
 
 const esOpcional = (t) => (fd.c?.opcionales || []).includes(t);
 
+// Motivos rápidos para guardar una foto con aviso de calidad (el último pide escribirlo).
+const MOTIVOS = [
+  'El documento original está así (dañado, plastificado o desgastado)',
+  'Ya se repitió varias veces y no mejora',
+  'El huésped no puede esperar',
+  'Otro motivo',
+];
+
+// Vista previa de la foto. Si la revisión encontró problemas, se avisa antes de guardar:
+// se recomienda repetirla, pero se puede guardar de todos modos indicando el motivo.
+function vistaPrevia(D) {
+  const cur = fd.cur;
+  const subiendo = fd.subiendo;
+  const problemas = cur.problemas || [];
+  // Con aviso la foto se achica para que el aviso y los botones quepan sin desplazarse.
+  const img = `<div class="preview ${problemas.length ? (fd.pedirMotivo ? 'con-motivo' : 'con-aviso') : ''}"><img src="${cur.url}" alt="Vista previa: ${D.label}"></div>`;
+  const err = fd.errSubir ? `<div class="notice">${esc(fd.errSubir)}</div>` : '';
+  const repetir = (primario, texto) => `<label class="btn ${primario ? 'primary' : ''} lg ${subiendo ? 'is-disabled' : ''}" for="foto">${texto}</label>
+        <input id="foto" class="file-hidden" type="file" accept="image/*" capture="environment" ${subiendo ? 'disabled' : ''}>`;
+  if (!problemas.length) {
+    return `${img}<p class="muted center">Revisa que se lea todo el documento y que no esté cortado.</p>${err}
+      <div class="fd-actions">${repetir(false, 'Repetir')}
+        <button class="btn primary lg" data-a="usar" ${subiendo ? 'disabled' : ''}>${subiendo ? 'Guardando…' : 'Usar esta foto'}</button></div>`;
+  }
+  const lista = problemas.map((p) => `<li><b>${PROBLEMAS[p][0]}.</b> ${PROBLEMAS[p][1]}</li>`).join('');
+  const aviso = `<div class="notice calidad" id="aviso-calidad" role="alert"><b>Revisa esta foto antes de guardarla</b>
+      <ul>${lista}</ul>Si no se lee bien, Grupos tendrá que pedirle el documento otra vez al huésped.</div>`;
+  if (!fd.pedirMotivo) {
+    return `${img}${aviso}${err}
+      <div class="fd-actions">
+        <button class="btn lg" data-a="motivo-calidad" ${subiendo ? 'disabled' : ''}>Guardar de todos modos</button>
+        ${repetir(true, 'Repetir foto')}</div>`;
+  }
+  const otro = fd.motivoSel === MOTIVOS.length - 1;
+  const listo = fd.motivoSel != null && (!otro || (fd.motivoTxt || '').trim());
+  return `${img}${aviso}
+    <fieldset class="motivo-calidad" id="motivo-calidad"><legend>¿Por qué se guarda así? Quedará anotado en la bitácora.</legend>
+      ${MOTIVOS.map((m, i) => `<label class="opt"><input type="radio" name="motivo-cal" value="${i}" ${fd.motivoSel === i ? 'checked' : ''}> ${esc(m)}</label>`).join('')}
+      ${otro ? `<input id="motivo-txt" maxlength="200" placeholder="Escribe el motivo" value="${esc(fd.motivoTxt || '')}" autocomplete="off">` : ''}
+    </fieldset>${err}
+    <div class="fd-actions">
+      <button class="btn lg" data-a="motivo-volver" ${subiendo ? 'disabled' : ''}>Volver</button>
+      <button class="btn primary lg" data-a="usar" ${subiendo || !listo ? 'disabled' : ''}>${subiendo ? 'Guardando…' : 'Guardar con aviso'}</button></div>`;
+}
+
+function motivoCalidad() {
+  if (!fd.cur?.problemas?.length) return '';
+  const otro = fd.motivoSel === MOTIVOS.length - 1;
+  return otro ? `Otro motivo: ${(fd.motivoTxt || '').trim()}` : MOTIVOS[fd.motivoSel] || '';
+}
+
+function limpiarMotivo() {
+  fd.pedirMotivo = false;
+  fd.motivoSel = null;
+  fd.motivoTxt = '';
+}
+
 function pantallaResumen() {
   const c = fd.c;
   const faltan = c.pasos.filter((s) => !fd.shots[s] && !esOpcional(s));
   return `<div class="fd-top"><div><p class="eyebrow">Revisión antes de enviar</p><h1>${esc(c.nombre)} ${esc(c.apellidos)}</h1></div>${timerHTML()}</div>
-    <div class="sumgrid">${c.pasos.map((s, i) => `<div class="sum">${fd.shots[s] ? `<img src="${fd.shots[s].url}" alt="${DOCS[s].label}">` : `<div class="missing">${esOpcional(s) ? 'Opcional, sin foto' : 'No lo trajo'}</div>`}<b>${DOCS[s].label}</b><button class="btn sm" data-a="redo" data-i="${i}" ${fd.enviando ? 'disabled' : ''}>${fd.shots[s] ? 'Repetir' : 'Tomar'}</button></div>`).join('')}</div>
+    <div class="sumgrid">${c.pasos.map((s, i) => `<div class="sum">${fd.shots[s] ? `<img src="${fd.shots[s].url}" alt="${DOCS[s].label}">` : `<div class="missing">${esOpcional(s) ? 'Opcional, sin foto' : 'No lo trajo'}</div>`}<b>${DOCS[s].label}</b>${fd.shots[s]?.problemas?.length ? '<span class="cal-tag">Guardada con aviso</span>' : ''}<button class="btn sm" data-a="redo" data-i="${i}" ${fd.enviando ? 'disabled' : ''}>${fd.shots[s] ? 'Repetir' : 'Tomar'}</button></div>`).join('')}</div>
     ${faltan.length ? `<div class="notice">Faltan: ${faltan.map((s) => DOCS[s].label.toLowerCase()).join(', ')}. El expediente quedará como <b>Captura incompleta</b> y Front Desk tendrá que generar otro QR para completarlo.</div>` : ''}
     ${fd.errEnviar ? `<div class="notice">${esc(fd.errEnviar)}</div>` : ''}
     <div class="fd-actions"><span class="muted">Al enviar, la captura pasa a Grupos. Las fotos ya quedaron guardadas.</span>
@@ -270,6 +316,7 @@ async function fotoElegida(input) {
   fd.errSubir = null;
   liberar(fd.cur);
   fd.cur = null;
+  limpiarMotivo();
   pintar();
   try {
     fd.cur = await procesarFoto(file);
@@ -283,6 +330,13 @@ async function fotoElegida(input) {
 async function usarFoto() {
   const t = fd.c.pasos[fd.idx];
   const cur = fd.cur;
+  const problemas = cur.problemas || [];
+  const motivo = motivoCalidad();
+  if (problemas.length && !motivo) {
+    fd.pedirMotivo = true;
+    pintar();
+    return;
+  }
   fd.subiendo = true;
   fd.errSubir = null;
   pintar();
@@ -290,6 +344,7 @@ async function usarFoto() {
     const q = new URLSearchParams({
       exp: fd.c.expediente_id, tipo: t, ancho: cur.ancho, alto: cur.alto, nitidez: cur.nitidez,
       ...(t === 'fmm' ? { fmm: fd.fmmTipo } : {}),
+      ...(problemas.length ? { calidad: problemas.join(','), motivo } : {}),
     });
     await api('POST', `/api/captura/${fd.c.codigo}/foto?${q}`, cur.blob);
     liberar(fd.shots[t]);
@@ -297,6 +352,7 @@ async function usarFoto() {
     delete fd.skipped[t];
     fd.cur = null;
     fd.subiendo = false;
+    limpiarMotivo();
     avanzar();
   } catch (e) {
     fd.subiendo = false;
@@ -406,11 +462,20 @@ document.addEventListener('click', (ev) => {
       delete fd.shots[t];
       liberar(fd.cur);
       fd.cur = null;
+      limpiarMotivo();
       avanzar();
       break;
     }
     case 'usar':
       usarFoto();
+      break;
+    case 'motivo-calidad':
+      fd.pedirMotivo = true;
+      pintar();
+      break;
+    case 'motivo-volver':
+      limpiarMotivo();
+      pintar();
       break;
     case 'aviso-si':
       respuestaAviso(true);
@@ -422,6 +487,7 @@ document.addEventListener('click', (ev) => {
       fd.idx = +d.i;
       fd.step = 'capture';
       fd.cur = null;
+      limpiarMotivo();
       fd.volverResumen = true;
       pintar();
       break;
@@ -434,6 +500,20 @@ document.addEventListener('click', (ev) => {
 document.addEventListener('change', (ev) => {
   if (state.perfil?.rol !== 'ipad') return;
   if (ev.target.id === 'foto') fotoElegida(ev.target);
+  if (ev.target.name === 'motivo-cal') {
+    fd.motivoSel = +ev.target.value;
+    pintar();
+    if (fd.motivoSel === MOTIVOS.length - 1) document.getElementById('motivo-txt')?.focus();
+  }
+});
+
+// El botón "Guardar con aviso" se habilita en cuanto se escribe el motivo, sin repintar
+// (repintar quitaría el teclado del iPad).
+document.addEventListener('input', (ev) => {
+  if (state.perfil?.rol !== 'ipad' || ev.target.id !== 'motivo-txt') return;
+  fd.motivoTxt = ev.target.value;
+  const b = document.querySelector('#motivo-calidad ~ .fd-actions [data-a="usar"]');
+  if (b && !fd.subiendo) b.disabled = !fd.motivoTxt.trim();
 });
 
 document.addEventListener('submit', (ev) => {

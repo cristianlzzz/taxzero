@@ -528,6 +528,18 @@ app.post('/api/grupos/:id/importar', async (c) => {
 });
 
 // ------------------------------------------------------------------ expedientes
+// Documentos del huésped con el aviso de calidad (si se guardó con aviso). Mientras no se
+// corra la migración 0019, la base no tiene esas columnas y se piden sin ellas.
+async function documentosExpediente(db: Db, id: string) {
+  const base = `documentos?expediente_id=eq.${id}&order=tipo,version&select=id,tipo,version,fmm_tipo,bytes,ancho,alto,nitidez,capturado_en,capturado_por_nombre`;
+  try {
+    return await db.select(`${base},calidad,calidad_motivo`);
+  } catch (e) {
+    if ((e as ErrorApi).code === '42703') return db.select(base);
+    throw e;
+  }
+}
+
 app.get('/api/expedientes/:id', async (c) => {
   exigir(c, ...PC);
   const id = uuid(c.req.param('id'));
@@ -537,7 +549,7 @@ app.get('/api/expedientes/:id', async (c) => {
   await exigirGrupoVigenteFD(c, expediente.grupo_id);
   const [grupo, documentos, bitacora] = await Promise.all([
     db.select(`grupos?id=eq.${expediente.grupo_id}&select=id,folio,nombre,codigo_opera,llegada,salida`).then((r) => r[0]),
-    db.select(`documentos?expediente_id=eq.${id}&select=id,tipo,version,fmm_tipo,bytes,ancho,alto,nitidez,capturado_en,capturado_por_nombre&order=tipo,version`),
+    documentosExpediente(db, id),
     db.select(`bitacora?expediente_id=eq.${id}&select=ts,usuario_nombre,rol,accion,motivo&order=ts.desc,id.desc`),
   ]);
   let codigo = null;
@@ -720,6 +732,7 @@ app.post('/api/captura/:codigo/aviso', async (c) => {
   return c.json({ ok: true });
 });
 
+const CALIDAD = ['borrosa', 'oscura', 'reflejo', 'cortada'];
 app.post('/api/captura/:codigo/foto', async (c) => {
   exigir(c, 'ipad');
   const codigo = c.req.param('codigo');
@@ -729,6 +742,11 @@ app.post('/api/captura/:codigo/foto', async (c) => {
   const tipo = q.tipo as (typeof TIPOS)[number];
   if (!TIPOS.includes(tipo)) throw new ErrorApi(400, 'Tipo de documento inválido.');
   const fmm = q.fmm && ['fmm', 'sello', 'qr'].includes(q.fmm) ? q.fmm : null;
+  // Aviso de calidad: lo que el iPad detectó (borrosa, oscura, reflejo, cortada) y el
+  // motivo por el que Front Desk la guardó de todos modos. Sin aviso se usa la función de siempre.
+  const calidad = [...new Set((q.calidad || '').split(',').filter((x) => CALIDAD.includes(x)))];
+  const motivo = (q.motivo || '').trim().slice(0, 300);
+  if (calidad.length && !motivo) throw new ErrorApi(400, 'Escribe por qué se guarda la foto con aviso de calidad.');
   if ((c.req.header('content-type') || '') !== 'image/jpeg') throw new ErrorApi(415, 'La foto debe ser JPEG.');
   const cuerpo = await c.req.arrayBuffer();
   if (cuerpo.byteLength < 1000 || cuerpo.byteLength > MAX_FOTO) {
@@ -743,6 +761,7 @@ app.post('/api/captura/:codigo/foto', async (c) => {
   const version = await db.rpc<number>('registrar_documento', {
     p_codigo: codigo, p_tipo: tipo, p_ruta: ruta, p_fmm_tipo: tipo === 'fmm' ? fmm || 'fmm' : null,
     p_bytes: cuerpo.byteLength, p_ancho: n(q.ancho), p_alto: n(q.alto), p_nitidez: n(q.nitidez),
+    ...(calidad.length ? { p_calidad: calidad, p_calidad_motivo: motivo } : {}),
   });
   return c.json({ version }, 201);
 });

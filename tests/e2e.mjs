@@ -235,21 +235,36 @@ let codigo, codigo2;
   await page.waitForSelector('text=Paso 1 de 5');
   ok(await page.isVisible('text=Paso 1 de 5'), 'La captura pide 4 documentos y el gafete opcional');
 
-  // Pasaporte: primero una foto borrosa
+  // Pasaporte: primero una foto borrosa. Avisa antes de guardar y no la guarda sin motivo.
   await page.setInputFiles('#foto', F['pasaporte-b']);
-  await page.waitForSelector('text=La foto parece borrosa');
-  ok(true, 'Detecta foto borrosa');
+  await page.waitForSelector('#aviso-calidad >> text=Salió borrosa');
+  ok(true, 'Detecta foto borrosa y avisa antes de guardarla');
   await page.screenshot({ path: `${OUT}/07-ipad-borrosa.png` });
+  await page.click('button:has-text("Guardar de todos modos")');
+  await page.waitForSelector('#motivo-calidad');
+  ok(await page.isDisabled('button:has-text("Guardar con aviso")'), 'Guardar con aviso pide elegir un motivo');
+  await page.click('label.opt:has-text("Otro motivo")');
+  ok(await page.isDisabled('button:has-text("Guardar con aviso")'), '"Otro motivo" pide escribirlo');
+  await page.fill('#motivo-txt', 'Prueba');
+  ok(await page.isEnabled('button:has-text("Guardar con aviso")'), 'Con el motivo escrito ya se puede guardar');
+  await page.screenshot({ path: `${OUT}/07b-ipad-motivo.png` });
+  await page.click('button:has-text("Volver")');
+  await page.waitForSelector('button:has-text("Repetir foto")');
   await page.setInputFiles('#foto', F.pasaporte);
   await page.waitForSelector('button:has-text("Usar esta foto")');
   await page.screenshot({ path: `${OUT}/08-ipad-preview.png` });
   await page.click('button:has-text("Usar esta foto")');
   await page.waitForSelector('text=Paso 2 de 5');
-  for (const [t, paso] of [['regcard', 3], ['pago', 4]]) {
-    await page.setInputFiles('#foto', F[t]);
-    await page.click('button:has-text("Usar esta foto")');
-    await page.waitForSelector(`text=Paso ${paso} de 5`);
-  }
+  await page.setInputFiles('#foto', F.regcard);
+  await page.click('button:has-text("Usar esta foto")');
+  await page.waitForSelector('text=Paso 3 de 5');
+  // Comprobante de pago: se guarda borroso de todos modos, con motivo.
+  await page.setInputFiles('#foto', F['pago-b']);
+  await page.click('button:has-text("Guardar de todos modos")');
+  await page.click('label.opt:has-text("El documento original está así")');
+  await page.click('button:has-text("Guardar con aviso")');
+  await page.waitForSelector('text=Paso 4 de 5');
+  ok(true, 'Una foto con aviso se puede guardar de todos modos indicando el motivo');
   await page.click('button[data-k="sello"]');
   await page.setInputFiles('#foto', F.fmm);
   await page.click('button:has-text("Usar esta foto")');
@@ -315,6 +330,8 @@ let codigo, codigo2;
   ok(n === 5, `Grupos ve las 5 fotos del expediente (${n})`);
   ok(await page.isVisible('text=v2 · actual'), 'La registration card repetida muestra versiones');
   ok(await page.isVisible('text=Captura enviada a Grupos'), 'La bitácora registra el envío');
+  ok(await page.isVisible('.doc-cal >> text=borrosa'), 'Grupos ve que el comprobante de pago se guardó con aviso de calidad y el motivo');
+  ok(await page.isVisible('.log >> text=Guardó la foto de comprobante de pago (versión 1) con aviso de calidad: borrosa'), 'La foto guardada con aviso queda en la bitácora');
   await page.screenshot({ path: `${OUT}/12-expediente.png`, fullPage: true });
   await page.click('text=v1 · reemplazada');
   ok(await page.isVisible('text=Versión anterior'), 'Se puede ver la versión anterior');

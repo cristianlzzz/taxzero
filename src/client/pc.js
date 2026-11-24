@@ -496,6 +496,9 @@ function versionActual(docs, tipo) {
   return { arr, v: arr.find((x) => x.version === sel) || arr[arr.length - 1] };
 }
 
+// Lo que la estación del iPad detectó cuando Front Desk guardó la foto de todos modos.
+const CALIDAD_TXT = { borrosa: 'borrosa', oscura: 'oscura', reflejo: 'con reflejo', cortada: 'posiblemente cortada' };
+
 function docCard(docs, tipo, num) {
   const { arr, v } = versionActual(docs, tipo);
   const ultima = arr[arr.length - 1];
@@ -510,6 +513,7 @@ function docCard(docs, tipo, num) {
       ? `${vieja ? '<span class="oldtag">Versión anterior</span>' : ''}<button class="view" data-a="zoom" data-d="${v.id}" data-t="${tipo}" aria-label="Ampliar ${DOCS[tipo].label}"><img class="paper" loading="lazy" src="/api/documentos/${v.id}/imagen" alt="${DOCS[tipo].label}, versión ${v.version}"></button>`
       : `<div class="missing">${DOCS[tipo].opcional ? 'Sin capturar (opcional)' : 'Sin capturar'}</div>`}</div>
     ${v ? `<div class="doc-f">v${v.version} capturada el ${fmt(v.capturado_en)} en ${esc(v.capturado_por_nombre || 'la estación de captura')}</div>` : ''}
+    ${v?.calidad?.length ? `<div class="doc-cal" role="note"><b>Se guardó con aviso de calidad:</b> ${v.calidad.map((x) => CALIDAD_TXT[x] || x).join(', ')}.${v.calidad_motivo ? ` <span>Motivo: ${esc(v.calidad_motivo)}</span>` : ''}</div>` : ''}
   </article>`;
 }
 
