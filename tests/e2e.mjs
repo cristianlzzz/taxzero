@@ -568,6 +568,7 @@ const leerExcel = (f) => execFileSync('python3', ['-I', '-c',
   await page.pdf({ path: `${OUT}/20-expediente-impreso.pdf`, format: 'Letter' });
   await page.emulateMedia({ media: 'screen' });
   ok(!(await page.isVisible('.portada >> text=Bitácora')), 'El expediente impreso ya no incluye la bitácora');
+  ok((await page.title()) === 'Emily Carter', `El PDF individual se guarda con el nombre del huésped (${await page.title()})`);
 
   // Expedientes de todo el grupo en un solo documento.
   await page.click('a:has-text("Volver al expediente")');
@@ -578,6 +579,7 @@ const leerExcel = (f) => execFileSync('python3', ['-I', '-c',
   const portadas = await page.locator('.impreso .portada').count();
   ok(portadas >= 2 && (await page.isVisible('.impreso .portada >> text=Carter, Emily')), `El PDF del grupo trae la portada del grupo y un expediente por huésped (${portadas - 1})`);
   ok(!(await page.isVisible('.impreso >> text=Bitácora')), 'El PDF del grupo no incluye la bitácora');
+  ok((await page.title()) === `GRP-${sufijo}`, `El PDF del grupo se guarda con el código del grupo (${await page.title()})`);
   ok((await page.textContent('#imp-estado')).includes('listas') || (await page.textContent('#imp-estado')).includes('lista'), `Fotos cargadas antes de imprimir (${await page.textContent('#imp-estado')})`);
   await page.selectOption('#imp-solo', 'cerrado');
   // En este punto el expediente de Carter fue reabierto por auditoría, así que no hay cerrados.
