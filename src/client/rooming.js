@@ -117,6 +117,40 @@ export function leerOpera(lineas) {
   return { filas, total, bloque };
 }
 
+// ------------------------------------------------------------------ XML de Opera
+const ENT_XML = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+const xmlTexto = (s) =>
+  s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/&(#x[0-9a-f]+|#\d+|\w+);/gi, (m, e) =>
+    e[0] === '#' ? String.fromCodePoint(e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : +e.slice(1)) : ENT_XML[e] ?? m).trim();
+
+// Lee el XML del reporte "Group Rooming List" de Opera (grprmlist). Solo toma lo que sirve para el
+// alta: nombre, fechas, estado, perfil del huésped (para detectar repetidos) y acompañantes.
+// Ignora habitación, reservación, tarifas y datos de pago aunque vengan en el archivo.
+export function leerOperaXML(texto) {
+  if (!/<GRPRMLIST\b/.test(texto) || !/<G_CONFIRMATION_NO>/.test(texto)) return null;
+  const campo = (b, t) => {
+    const m = b.match(new RegExp(`<${t}>([\\s\\S]*?)</${t}>`));
+    return m ? xmlTexto(m[1]) : '';
+  };
+  const filas = [];
+  for (const m of texto.matchAll(/<G_CONFIRMATION_NO>([\s\S]*?)<\/G_CONFIRMATION_NO>/g)) {
+    // Las tarifas vienen anidadas dentro de cada reservación; no se usan.
+    const b = m[1].replace(/<LIST_G_RATE_CHANGES>[\s\S]*?<\/LIST_G_RATE_CHANGES>/g, '');
+    const original = campo(b, 'FULL_NAME');
+    const { nombre, apellidos } = nombreOpera(original);
+    const acomp = campo(b, 'ACCOMPANYING_NAMES');
+    const noches = campo(b, 'NIGHTS');
+    filas.push({
+      nombre, apellidos, original, llegada: fechaOpera(campo(b, 'ARRIVAL')), salida: fechaOpera(campo(b, 'DEPARTURE')),
+      estado: campo(b, 'SHORT_RESV_STATUS').toUpperCase(), noches: noches === '' ? null : +noches,
+      acompanantes: acomp ? [acomp] : [], perfil: campo(b, 'GUEST_NAME_ID'), nacionalidad: '', pasaporte: '', vence: '',
+    });
+  }
+  const parciales = [...texto.matchAll(/<CS_RESERVATIONS_GRP2>\s*(\d+)\s*</g)].map((x) => +x[1]);
+  const g1 = texto.match(/<G_GRP1>[\s\S]*?<GRP1_DESC>([\s\S]*?)<\/GRP1_DESC>/);
+  return { filas, total: parciales.length ? parciales.reduce((a, b) => a + b, 0) : null, bloque: g1 ? xmlTexto(g1[1]) : '' };
+}
+
 // ------------------------------------------------------------------ Excel o CSV
 const COLUMNAS = {
   apellidos: ['apellido', 'apellidos', 'last name', 'lastname', 'surname', 'family name', 'apellido paterno'],
@@ -298,7 +332,9 @@ export function revisar(base, existentes = [], grupo = {}, { acompanantes = fals
   });
   // Misma persona con varias reservaciones: se queda la fila con el nombre más completo
   // (y que no esté cancelada); las demás se marcan como repetidas.
-  const grupos = new Map();
+  // Se agrupan por nombre parecido y, si el archivo lo trae (XML de Opera), por el perfil del huésped.
+  const grupoDe = new Map(); // clave → arreglo compartido
+  const grupos = new Set();
   for (const f of filas) {
     if (!f.nombre || !f.apellidos) continue;
     const e = yaExacta.get(claveExacta(f)) || yaParecida.get(claveParecida(f));
@@ -306,11 +342,21 @@ export function revisar(base, existentes = [], grupo = {}, { acompanantes = fals
       f.dup = yaExacta.has(claveExacta(f)) ? 'Ya está dado de alta en el grupo' : `Parecido a ${e.nombre} ${e.apellidos}, que ya está dado de alta`;
       continue;
     }
-    const k = claveParecida(f);
-    if (!grupos.has(k)) grupos.set(k, []);
-    grupos.get(k).push(f);
+    const claves = [`n:${claveParecida(f)}`, ...(f.perfil ? [`p:${f.perfil}`] : [])];
+    let g = claves.map((k) => grupoDe.get(k)).find(Boolean);
+    if (!g) grupos.add((g = []));
+    for (const k of claves) {
+      const otro = grupoDe.get(k);
+      if (otro && otro !== g) {
+        g.push(...otro);
+        grupos.delete(otro);
+        for (const [kk, v] of grupoDe) if (v === otro) grupoDe.set(kk, g);
+      }
+      grupoDe.set(k, g);
+    }
+    g.push(f);
   }
-  for (const g of grupos.values()) {
+  for (const g of grupos) {
     if (g.length < 2) continue;
     const largo = (f) => (f.fuera ? 0 : 1000) + `${f.nombre} ${f.apellidos}`.length - f.n / 10000;
     const queda = g.reduce((a, b) => (largo(b) > largo(a) ? b : a));

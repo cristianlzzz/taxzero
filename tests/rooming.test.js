@@ -149,3 +149,35 @@ describe('archivos de prueba', () => {
     expect(filas[2].llegada).toBe('2027-03-10');
   });
 });
+
+describe('XML de Opera', () => {
+  it('lee las reservaciones y detecta repetidos por perfil del huésped', async () => {
+    const fs = await import('node:fs');
+    const { leerOperaXML } = await import('../src/client/rooming.js');
+    const r = leerOperaXML(fs.readFileSync(new URL('./fixtures/rooming-list-opera-prueba.xml', import.meta.url), 'utf8'));
+    expect(r.filas).toHaveLength(9);
+    expect(r.total).toBe(9);
+    expect(r.bloque).toBe('PRUEBA_0001 Congreso de Prueba Taxzero 2027');
+    expect(r.filas[0]).toMatchObject({ nombre: 'Emily', apellidos: 'Carter', llegada: '2027-03-10', salida: '2027-03-14', acompanantes: ['Daniel Carter'], perfil: '70000001' });
+    expect(r.filas[6]).toMatchObject({ nombre: 'Thomas', apellidos: 'Müller' });
+    expect(r.filas[5].apellidos).toBe("O'Connor");
+    expect(JSON.stringify(r.filas)).not.toMatch(/900000|0101|PK1N|No debe leerse/);
+    const v = revisar(r.filas);
+    expect(v.filter((f) => f.incluir)).toHaveLength(7);
+    expect(v[1].dup).toMatch(/Se repite con la fila 3/);
+    expect(v[7].fuera).toBe('No show en Opera');
+  });
+  it('une repetidos por perfil aunque el nombre sea distinto', () => {
+    const base = [
+      { nombre: 'Bob', apellidos: 'Smith', perfil: '1', acompanantes: [] },
+      { nombre: 'Robert', apellidos: 'Smith Jr', perfil: '1', acompanantes: [] },
+    ];
+    const v = revisar(base);
+    expect(v.filter((f) => f.incluir)).toHaveLength(1);
+    expect(v.find((f) => f.incluir).nombre).toBe('Robert');
+  });
+  it('rechaza XML que no es de Opera', async () => {
+    const { leerOperaXML } = await import('../src/client/rooming.js');
+    expect(leerOperaXML('<x><y/></x>')).toBeNull();
+  });
+});

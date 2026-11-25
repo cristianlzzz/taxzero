@@ -69,7 +69,7 @@ información, y nada se borra.
 
 - En la página del grupo, **Dar de alta desde rooming list** (Grupos, Front Desk y Administración). También se ofrece al
   subir la rooming list en *Documentos del evento*. El alta manual de un huésped sigue igual.
-- Acepta el reporte *Group Rooming List* de Opera en PDF, Excel (.xlsx) o CSV. El archivo se lee en el navegador.
+- Acepta el reporte *Group Rooming List* de Opera en XML (el más exacto: detecta repetidos por el perfil del huésped) o PDF, y Excel (.xlsx) o CSV. El archivo se lee en el navegador; del XML se ignoran habitación, reservación, tarifas y datos de pago.
 - Vista previa antes de confirmar: nacionalidad para todas las filas que no la traen (Opera no la incluye) y cambio una
   por una, nombres editables, reservaciones repetidas de una misma persona, huéspedes que ya están en el grupo,
   reservaciones canceladas o no show, y filas con problemas (sin nombre, con números, sin nacionalidad).
