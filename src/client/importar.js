@@ -3,7 +3,7 @@
 // El alta manual de un huésped sigue existiendo aparte.
 import { PAISES, PAISES_FREC } from './catalogos.js';
 import { api, dateTxt, esc, folioGrupo } from './util.js';
-import { comparable, leerCSV, leerOpera, leerTabla, nombrePais, renglones, revisar, revisarProblemas } from './rooming.js';
+import { comparable, leerCSV, leerOpera, leerOperaXML, leerTabla, nombrePais, renglones, revisar, revisarProblemas } from './rooming.js';
 import { toast } from './main.js';
 
 const MAX_MB = 20;
@@ -68,6 +68,10 @@ async function leerArchivo(file, datos) {
         if (t.filas.length) r = t;
       }
       if (!r.filas.length) throw new Error('No encontramos huéspedes en este PDF. Debe ser el reporte "Group Rooming List" de Opera.');
+    } else if (ext === 'xml') {
+      r = leerOperaXML(new TextDecoder().decode(buf));
+      if (!r) throw new Error('Este XML no es la rooming list de Opera. Descárgalo desde el reporte "Group Rooming List" (grprmlist).');
+      if (!r.filas.length) throw new Error('El XML no tiene reservaciones.');
     } else if (ext === 'xlsx') {
       const { leerXlsx } = await import('./lector-xlsx.js');
       r = leerTabla(await leerXlsx(buf));
@@ -76,7 +80,7 @@ async function leerArchivo(file, datos) {
     } else if (ext === 'xls') {
       throw new Error('Este Excel es de formato antiguo (.xls). Ábrelo en Excel y guárdalo como .xlsx, o exporta la rooming list de Opera en PDF.');
     } else {
-      throw new Error('Usa la rooming list de Opera en PDF, o un Excel (.xlsx) o CSV.');
+      throw new Error('Usa la rooming list de Opera en XML o PDF, o un Excel (.xlsx) o CSV.');
     }
     if (r.sinTitulos) throw new Error('No encontramos los títulos de las columnas. El Excel debe tener una columna "Nombre" y otra "Apellido" (o una sola columna "Name" como en Opera).');
     if (!r.filas.length) throw new Error('El archivo no tiene huéspedes.');
@@ -85,7 +89,7 @@ async function leerArchivo(file, datos) {
     imp.total = r.total;
     imp.bloque = r.bloque;
     imp.tieneAcomp = r.filas.some((f) => f.acompanantes?.length);
-    imp.esPDF = ext === 'pdf';
+    imp.esOpera = ext === 'pdf' || ext === 'xml';
     reconstruir(datos);
   } catch (e) {
     imp.error = e.message || 'No se pudo leer el archivo.';
@@ -136,6 +140,7 @@ function celdaNac(f, i) {
 
 function filaHTML(f, i) {
   const est = f.llegada || f.salida ? `<span class="nw">${dateTxt(f.llegada)}</span><span class="sub nw">al ${dateTxt(f.salida)}</span>` : '<span class="muted">·</span>';
+  const opera = [f.habitacion ? `Hab. ${esc(f.habitacion)}` : '', f.reservacion ? `Res. ${esc(f.reservacion)}` : ''].filter(Boolean).join(' · ');
   return `<tr data-fila="${i}" class="${lista(f) ? '' : 'imp-off'}">
     <td class="imp-chk"><input type="checkbox" data-imp-inc="${i}" ${f.incluir ? 'checked' : ''} aria-label="Incluir la fila ${f.n}"></td>
     <td class="num muted">${f.n}</td>
@@ -143,7 +148,7 @@ function filaHTML(f, i) {
     <td><input type="text" class="imp-in" data-imp-campo="apellidos" data-i="${i}" value="${esc(f.apellidos)}" maxlength="120" aria-label="Apellidos de la fila ${f.n}">
       ${f.original && comparable(f.original) !== comparable(`${f.apellidos} ${f.nombre}`) ? `<span class="sub">En el archivo: ${esc(f.original)}</span>` : ''}</td>
     <td>${celdaNac(f, i)}${f.pasaporte ? `<span class="sub mono">${esc(f.pasaporte)}</span>` : ''}</td>
-    <td class="num">${est}</td>
+    <td class="num">${est}${opera ? `<span class="sub nw mono">${opera}</span>` : ''}</td>
     <td class="imp-rev">${estadoFila(f)}</td></tr>`;
 }
 
@@ -170,13 +175,13 @@ function pie(g) {
 
 function selector(g) {
   return `<div class="card flat stack">
-    <p>Sube la rooming list del grupo tal como sale de Opera (reporte <i>Group Rooming List</i> en PDF), o un Excel (.xlsx) o CSV con columnas de nombre y apellido.</p>
+    <p>Sube la rooming list del grupo tal como sale de Opera (reporte <i>Group Rooming List</i>). <b>El XML es el más exacto</b>; también sirven el PDF, o un Excel (.xlsx) o CSV con columnas de nombre y apellido.</p>
     <ul class="imp-lista note">
       <li>Antes de dar de alta verás una vista previa. Ahí eliges la nacionalidad, corriges nombres y decides qué filas entran.</li>
       <li>Las reservaciones repetidas de una misma persona y los huéspedes que ya están en el grupo se marcan y no se incluyen.</li>
-      <li>No se guardan número de habitación ni número de reservación, aunque vengan en el archivo.</li>
+      <li>Si el archivo trae habitación y número de reservación (el XML de Opera siempre los trae), se guardan con cada huésped.</li>
     </ul>
-    <div><label class="btn primary" for="imp-file">Elegir archivo</label><input id="imp-file" class="file-hidden" type="file" accept=".pdf,.xlsx,.csv" data-imp-file></div>
+    <div><label class="btn primary" for="imp-file">Elegir archivo</label><input id="imp-file" class="file-hidden" type="file" accept=".xml,.pdf,.xlsx,.csv" data-imp-file></div>
     ${imp.error ? `<p class="err">${esc(imp.error)}</p>` : ''}
     <p class="note">También puedes seguir dando de alta huéspedes uno por uno desde la página del grupo.</p></div>`;
 }
@@ -196,12 +201,12 @@ function vistaPrevia(g) {
       <div class="imp-herr">
         ${sinNac ? `<div class="field"><label for="imp-nac-todos">Nacionalidad para las filas que no la tienen${sinNac ? ` (${sinNac})` : ''}</label>
           <div class="row nowrap"><select id="imp-nac-todos">${opcionesPais()}</select><button type="button" class="btn" data-a="imp-nac-todos" ${sinNac ? '' : 'disabled'}>Aplicar</button></div>
-          <span class="note">${imp.esPDF ? 'La rooming list de Opera no trae nacionalidad. ' : ''}Elige la del grupo y cambia una por una las que sean distintas.</span></div>` : '<p class="note">Todas las filas traen nacionalidad. Puedes cambiarla una por una.</p>'}
+          <span class="note">${imp.esOpera ? 'La rooming list de Opera no trae nacionalidad. ' : ''}Elige la del grupo y cambia una por una las que sean distintas.</span></div>` : '<p class="note">Todas las filas traen nacionalidad. Puedes cambiarla una por una.</p>'}
         ${imp.tieneAcomp ? `<label class="toggle imp-acomp"><input type="checkbox" data-imp-acomp ${imp.acompanantes ? 'checked' : ''}><span>Incluir a los acompañantes como huéspedes
-          <span class="note">${imp.esPDF ? 'Opera los lista bajo "Accompanying Names". ' : ''}Si los activas, revisa su nombre y apellidos.</span></span></label>` : ''}
+          <span class="note">${imp.esOpera ? 'Opera los lista bajo "Accompanying Names". ' : ''}Si los activas, revisa su nombre y apellidos.</span></span></label>` : ''}
       </div></div>
     <div class="seg" role="tablist" aria-label="Filtrar filas">${FILTROS.map(([k, l]) => (conteo[k] || k === 'todas' ? `<button class="tab" role="tab" data-a="imp-filtro" data-k="${k}" aria-selected="${imp.filtro === k}">${l} (${conteo[k]})</button>` : '')).join('')}</div>
-    <div class="tablewrap"><table class="imp-tabla"><thead><tr><th><span class="sr">Incluir</span></th><th>#</th><th>Nombre(s)</th><th>Apellidos</th><th>Nacionalidad</th><th>Estancia</th><th>Revisión</th></tr></thead>
+    <div class="tablewrap"><table class="imp-tabla"><thead><tr><th><span class="sr">Incluir</span></th><th>#</th><th>Nombre(s)</th><th>Apellidos</th><th>Nacionalidad</th><th>Estancia y Opera</th><th>Revisión</th></tr></thead>
       <tbody>${filas || '<tr><td colspan="7" class="empty">Ninguna fila con este filtro.</td></tr>'}</tbody></table></div>
     ${pie(g)}`;
 }
@@ -340,7 +345,7 @@ export function manejarCambio(t, datos) {
 async function enviar(datos) {
   const filas = imp.filas.filter(lista).map((f) => ({
     fila: f.n, nombre: f.nombre, apellidos: f.apellidos, nacionalidad_codigo: f.nac, nacionalidad: nombrePais(f.nac),
-    pasaporte: f.pasaporte || '', pasaporte_vence: f.vence || '', duplicado_ok: !!f.dup,
+    pasaporte: f.pasaporte || '', pasaporte_vence: f.vence || '', habitacion: f.habitacion || '', reservacion: f.reservacion || '', duplicado_ok: !!f.dup,
   }));
   if (!filas.length) return;
   imp.enviando = true;

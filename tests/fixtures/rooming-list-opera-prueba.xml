@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- DOCUMENTO DE PRUEBA / FICTICIO: datos inventados para pruebas de Taxzero, misma estructura que el XML de Opera -->
+<GRPRMLIST>
+  <LIST_G_GRP1>
+    <G_GRP1>
+      <GRP1_CODE>PRUEBA_0001</GRP1_CODE>
+      <GRP1_DESC>PRUEBA_0001 Congreso de Prueba Taxzero 2027</GRP1_DESC>
+      <GRP1_LBL>Block Code</GRP1_LBL>
+      <LIST_G_GRP2>
+        <G_GRP2>
+          <GRP2_DESC>03-10-27</GRP2_DESC>
+          <GRP2_LBL>Arrival Date</GRP2_LBL>
+          <LIST_G_CONFIRMATION_NO>
+            <G_CONFIRMATION_NO>
+              <ACCOMPANYING_NAMES>Daniel Carter</ACCOMPANYING_NAMES>
+              <BLOCK_CODE>PRUEBA_0001</BLOCK_CODE>
+              <CONFIRMATION_NO>900000101</CONFIRMATION_NO>
+              <FULL_NAME>*Carter,Emily,Ms</FULL_NAME>
+              <ARRIVAL>03-10-27</ARRIVAL>
+              <DEPARTURE>03-14-27</DEPARTURE>
+              <ROOM>0101</ROOM>
+              <ROOM_CATEGORY_LABEL>PK1N</ROOM_CATEGORY_LABEL>
+              <SHORT_RESV_STATUS>CKOT</SHORT_RESV_STATUS>
+              <GUEST_NAME_ID>70000001</GUEST_NAME_ID>
+              <CREDIT_CARD_NUMBER></CREDIT_CARD_NUMBER>
+              <NIGHTS>4</NIGHTS>
+              <LIST_G_RATE_CHANGES>
+                <G_RATE_CHANGES>
+                  <RC_RATE_CODE>PRUEBA</RC_RATE_CODE>
+                  <FULL_NAME>No debe leerse</FULL_NAME>
+                </G_RATE_CHANGES>
+              </LIST_G_RATE_CHANGES>
+            </G_CONFIRMATION_NO>
+          </LIST_G_CONFIRMATION_NO>
+          <CS_RESERVATIONS_GRP2>1</CS_RESERVATIONS_GRP2>
+        </G_GRP2>
+        <G_GRP2>
+          <GRP2_DESC>03-08-27</GRP2_DESC>
+          <GRP2_LBL>Arrival Date</GRP2_LBL>
+          <LIST_G_CONFIRMATION_NO>
+            <G_CONFIRMATION_NO>
+              <ACCOMPANYING_NAMES></ACCOMPANYING_NAMES>
+              <BLOCK_CODE>PRUEBA_0001</BLOCK_CODE>
+              <CONFIRMATION_NO>900000102</CONFIRMATION_NO>
+              <FULL_NAME>Brooks,Michael</FULL_NAME>
+              <ARRIVAL>03-08-27</ARRIVAL>
+              <DEPARTURE>03-10-27</DEPARTURE>
+              <ROOM>0101</ROOM>
+              <ROOM_CATEGORY_LABEL>PK1N</ROOM_CATEGORY_LABEL>
+              <SHORT_RESV_STATUS>CKOT</SHORT_RESV_STATUS>
+              <GUEST_NAME_ID>70000002</GUEST_NAME_ID>
+              <CREDIT_CARD_NUMBER></CREDIT_CARD_NUMBER>
+              <NIGHTS>2</NIGHTS>
+              <LIST_G_RATE_CHANGES>
+                <G_RATE_CHANGES>
+                  <RC_RATE_CODE>PRUEBA</RC_RATE_CODE>
+                  <FULL_NAME>No debe leerse</FULL_NAME>
+                </G_RATE_CHANGES>
+              </LIST_G_RATE_CHANGES>
+            </G_CONFIRMATION_NO>
+          </LIST_G_CONFIRMATION_NO>
+          <CS_RESERVATIONS_GRP2>1</CS_RESERVATIONS_GRP2>
+        </G_GRP2>
+        <G_GRP2>
+          <GRP2_DESC>03-10-27</GRP2_DESC>
+          <GRP2_LBL>Arrival Date</GRP2_LBL>
+          <LIST_G_CONFIRMATION_NO>
+            <G_CONFIRMATION_NO>
+              <ACCOMPANYING_NAMES></ACCOMPANYING_NAMES>
+              <BLOCK_CODE>PRUEBA_0001</BLOCK_CODE>
+              <CONFIRMATION_NO>900000103</CONFIRMATION_NO>
+              <FULL_NAME>Brooks,Michael James,Mr</FULL_NAME>
+              <ARRIVAL>03-10-27</ARRIVAL>
+              <DEPARTURE>03-14-27</DEPARTURE>
+              <ROOM>0101</ROOM>
+              <ROOM_CATEGORY_LABEL>PK1N</ROOM_CATEGORY_LABEL>
+              <SHORT_RESV_STATUS>CKOT</SHORT_RESV_STATUS>
+              <GUEST_NAME_ID>70000002</GUEST_NAME_ID>
+              <CREDIT_CARD_NUMBER></CREDIT_CARD_NUMBER>
+              <NIGHTS>4</NIGHTS>
+              <LIST_G_RATE_CHANGES>
+                <G_RATE_CHANGES>
+                  <RC_RATE_CODE>PRUEBA</RC_RATE_CODE>
+                  <FULL_NAME>No debe leerse</FULL_NAME>
+                </G_RATE_CHANGES>
+              </LIST_G_RATE_CHANGES>
+            </G_CONFIRMATION_NO>
+            <G_CONFIRMATION_NO>
+              <ACCOMPANYING_NAMES></ACCOMPANYING_NAMES>
+              <BLOCK_CODE>PRUEBA_0001</BLOCK_CODE>
+              <CONFIRMATION_NO>900000104</CONFIRMATION_NO>
+              <FULL_NAME>Nguyen,Sarah</FULL_NAME>
+              <ARRIVAL>03-10-27</ARRIVAL>
+              <DEPARTURE>03-14-27</DEPARTURE>
+              <ROOM>0101</ROOM>
+              <ROOM_CATEGORY_LABEL>PK1N</ROOM_CATEGORY_LABEL>
+              <SHORT_RESV_STATUS>CKOT</SHORT_RESV_STATUS>
+              <GUEST_NAME_ID>70000003</GUEST_NAME_ID>
+              <CREDIT_CARD_NUMBER></CREDIT_CARD_NUMBER>
+              <NIGHTS>4</NIGHTS>
+              <LIST_G_RATE_CHANGES>
+                <G_RATE_CHANGES>
+                  <RC_RATE_CODE>PRUEBA</RC_RATE_CODE>
+                  <FULL_NAME>No debe leerse</FULL_NAME>
+                </G_RATE_CHANGES>
+              </LIST_G_RATE_CHANGES>
+            </G_CONFIRMATION_NO>
+            <G_CONFIRMATION_NO>
+              <ACCOMPANYING_NAMES></ACCOMPANYING_NAMES>
+              <BLOCK_CODE>PRUEBA_0001</BLOCK_CODE>
+              <CONFIRMATION_NO>900000105</CONFIRMATION_NO>
+              <FULL_NAME>Kowalski,David</FULL_NAME>
+              <ARRIVAL>03-10-27</ARRIVAL>
+              <DEPARTURE>03-14-27</DEPARTURE>
+              <ROOM>0101</ROOM>
+              <ROOM_CATEGORY_LABEL>PK1N</ROOM_CATEGORY_LABEL>
+              <SHORT_RESV_STATUS>CKOT</SHORT_RESV_STATUS>
+              <GUEST_NAME_ID>70000004</GUEST_NAME_ID>
+              <CREDIT_CARD_NUMBER></CREDIT_CARD_NUMBER>
+              <NIGHTS>4</NIGHTS>
+              <LIST_G_RATE_CHANGES>
+                <G_RATE_CHANGES>
+                  <RC_RATE_CODE>PRUEBA</RC_RATE_CODE>
+                  <FULL_NAME>No debe leerse</FULL_NAME>
+                </G_RATE_CHANGES>
+              </LIST_G_RATE_CHANGES>
+            </G_CONFIRMATION_NO>
+            <G_CONFIRMATION_NO>
+              <ACCOMPANYING_NAMES></ACCOMPANYING_NAMES>
+              <BLOCK_CODE>PRUEBA_0001</BLOCK_CODE>
+              <CONFIRMATION_NO>900000106</CONFIRMATION_NO>
+              <FULL_NAME>O&#x27;Connor,Daniel</FULL_NAME>
+              <ARRIVAL>03-10-27</ARRIVAL>
+              <DEPARTURE>03-14-27</DEPARTURE>
+              <ROOM>0101</ROOM>
+              <ROOM_CATEGORY_LABEL>PK1N</ROOM_CATEGORY_LABEL>
+              <SHORT_RESV_STATUS>CKOT</SHORT_RESV_STATUS>
+              <GUEST_NAME_ID>70000005</GUEST_NAME_ID>
+              <CREDIT_CARD_NUMBER></CREDIT_CARD_NUMBER>
+              <NIGHTS>4</NIGHTS>
+              <LIST_G_RATE_CHANGES>
+                <G_RATE_CHANGES>
+                  <RC_RATE_CODE>PRUEBA</RC_RATE_CODE>
+                  <FULL_NAME>No debe leerse</FULL_NAME>
+                </G_RATE_CHANGES>
+              </LIST_G_RATE_CHANGES>
+            </G_CONFIRMATION_NO>
+            <G_CONFIRMATION_NO>
+              <ACCOMPANYING_NAMES></ACCOMPANYING_NAMES>
+              <BLOCK_CODE>PRUEBA_0001</BLOCK_CODE>
+              <CONFIRMATION_NO>900000107</CONFIRMATION_NO>
+              <FULL_NAME>Müller,Thomas</FULL_NAME>
+              <ARRIVAL>03-10-27</ARRIVAL>
+              <DEPARTURE>03-14-27</DEPARTURE>
+              <ROOM>0101</ROOM>
+              <ROOM_CATEGORY_LABEL>PK1N</ROOM_CATEGORY_LABEL>
+              <SHORT_RESV_STATUS>CKOT</SHORT_RESV_STATUS>
+              <GUEST_NAME_ID>70000006</GUEST_NAME_ID>
+              <CREDIT_CARD_NUMBER></CREDIT_CARD_NUMBER>
+              <NIGHTS>4</NIGHTS>
+              <LIST_G_RATE_CHANGES>
+                <G_RATE_CHANGES>
+                  <RC_RATE_CODE>PRUEBA</RC_RATE_CODE>
+                  <FULL_NAME>No debe leerse</FULL_NAME>
+                </G_RATE_CHANGES>
+              </LIST_G_RATE_CHANGES>
+            </G_CONFIRMATION_NO>
+            <G_CONFIRMATION_NO>
+              <ACCOMPANYING_NAMES></ACCOMPANYING_NAMES>
+              <BLOCK_CODE>PRUEBA_0001</BLOCK_CODE>
+              <CONFIRMATION_NO>900000108</CONFIRMATION_NO>
+              <FULL_NAME>Kim,Ji-woo</FULL_NAME>
+              <ARRIVAL>03-10-27</ARRIVAL>
+              <DEPARTURE>03-14-27</DEPARTURE>
+              <ROOM>0101</ROOM>
+              <ROOM_CATEGORY_LABEL>PK1N</ROOM_CATEGORY_LABEL>
+              <SHORT_RESV_STATUS>NOSH</SHORT_RESV_STATUS>
+              <GUEST_NAME_ID>70000007</GUEST_NAME_ID>
+              <CREDIT_CARD_NUMBER></CREDIT_CARD_NUMBER>
+              <NIGHTS>4</NIGHTS>
+              <LIST_G_RATE_CHANGES>
+                <G_RATE_CHANGES>
+                  <RC_RATE_CODE>PRUEBA</RC_RATE_CODE>
+                  <FULL_NAME>No debe leerse</FULL_NAME>
+                </G_RATE_CHANGES>
+              </LIST_G_RATE_CHANGES>
+            </G_CONFIRMATION_NO>
+          </LIST_G_CONFIRMATION_NO>
+          <CS_RESERVATIONS_GRP2>6</CS_RESERVATIONS_GRP2>
+        </G_GRP2>
+        <G_GRP2>
+          <GRP2_DESC>03-09-27</GRP2_DESC>
+          <GRP2_LBL>Arrival Date</GRP2_LBL>
+          <LIST_G_CONFIRMATION_NO>
+            <G_CONFIRMATION_NO>
+              <ACCOMPANYING_NAMES></ACCOMPANYING_NAMES>
+              <BLOCK_CODE>PRUEBA_0001</BLOCK_CODE>
+              <CONFIRMATION_NO>900000109</CONFIRMATION_NO>
+              <FULL_NAME>Tremblay,Sophie</FULL_NAME>
+              <ARRIVAL>03-09-27</ARRIVAL>
+              <DEPARTURE>03-14-27</DEPARTURE>
+              <ROOM>0101</ROOM>
+              <ROOM_CATEGORY_LABEL>PK1N</ROOM_CATEGORY_LABEL>
+              <SHORT_RESV_STATUS>CKOT</SHORT_RESV_STATUS>
+              <GUEST_NAME_ID>70000008</GUEST_NAME_ID>
+              <CREDIT_CARD_NUMBER></CREDIT_CARD_NUMBER>
+              <NIGHTS>5</NIGHTS>
+              <LIST_G_RATE_CHANGES>
+                <G_RATE_CHANGES>
+                  <RC_RATE_CODE>PRUEBA</RC_RATE_CODE>
+                  <FULL_NAME>No debe leerse</FULL_NAME>
+                </G_RATE_CHANGES>
+              </LIST_G_RATE_CHANGES>
+            </G_CONFIRMATION_NO>
+          </LIST_G_CONFIRMATION_NO>
+          <CS_RESERVATIONS_GRP2>1</CS_RESERVATIONS_GRP2>
+        </G_GRP2>
+      </LIST_G_GRP2>
+    </G_GRP1>
+  </LIST_G_GRP1>
+</GRPRMLIST>

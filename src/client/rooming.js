@@ -1,6 +1,6 @@
 // Lectura de la rooming list para dar de alta huéspedes en bloque.
 // Funciones puras (sin pantalla) para poder probarlas: reciben texto o tablas y regresan filas.
-// No se conservan número de habitación ni número de reservación de Opera.
+// También toma habitación y número de reservación de Opera cuando vienen en el archivo.
 import { PAISES } from './catalogos.js';
 
 // Texto comparable: sin acentos, sin signos, minúsculas y espacios simples.
@@ -99,14 +99,14 @@ export function leerOpera(lineas) {
       continue;
     }
     if (!(m = l.match(RE_RESERVA))) continue;
-    const [, , nombreCrudo, , arr, dep, resto = ''] = m;
+    const [, hab = '', nombreCrudo, conf, arr, dep, resto = ''] = m;
     const tokens = resto.split(' ').filter(Boolean);
     const nums = [];
     while (tokens.length && /^\d+$/.test(tokens[tokens.length - 1]) && nums.length < 4) nums.unshift(+tokens.pop());
     const estado = tokens.find((t) => ESTADOS_OPERA.has(t.toUpperCase())) || (tokens.length > 1 ? tokens[tokens.length - 1] : '');
     const { nombre, apellidos } = nombreOpera(nombreCrudo);
     filas.push({
-      nombre, apellidos, original: nombreCrudo.trim(), llegada: fechaOpera(arr), salida: fechaOpera(dep),
+      nombre, apellidos, original: nombreCrudo.trim(), habitacion: hab, reservacion: conf, llegada: fechaOpera(arr), salida: fechaOpera(dep),
       estado: estado.toUpperCase(), noches: nums.length === 4 ? nums[2] : null, acompanantes: [],
       nacionalidad: '', pasaporte: '', vence: '',
     });
@@ -115,6 +115,40 @@ export function leerOpera(lineas) {
   if (total == null && filas.subtotal) total = filas.subtotal;
   delete filas.subtotal;
   return { filas, total, bloque };
+}
+
+// ------------------------------------------------------------------ XML de Opera
+const ENT_XML = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+const xmlTexto = (s) =>
+  s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/&(#x[0-9a-f]+|#\d+|\w+);/gi, (m, e) =>
+    e[0] === '#' ? String.fromCodePoint(e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : +e.slice(1)) : ENT_XML[e] ?? m).trim();
+
+// Lee el XML del reporte "Group Rooming List" de Opera (grprmlist). Solo toma lo que sirve para el
+// alta: nombre, habitación, reservación, fechas, estado, perfil del huésped (para detectar repetidos)
+// y acompañantes. Ignora tarifas y datos de pago aunque vengan en el archivo.
+export function leerOperaXML(texto) {
+  if (!/<GRPRMLIST\b/.test(texto) || !/<G_CONFIRMATION_NO>/.test(texto)) return null;
+  const campo = (b, t) => {
+    const m = b.match(new RegExp(`<${t}>([\\s\\S]*?)</${t}>`));
+    return m ? xmlTexto(m[1]) : '';
+  };
+  const filas = [];
+  for (const m of texto.matchAll(/<G_CONFIRMATION_NO>([\s\S]*?)<\/G_CONFIRMATION_NO>/g)) {
+    // Las tarifas vienen anidadas dentro de cada reservación; no se usan.
+    const b = m[1].replace(/<LIST_G_RATE_CHANGES>[\s\S]*?<\/LIST_G_RATE_CHANGES>/g, '');
+    const original = campo(b, 'FULL_NAME');
+    const { nombre, apellidos } = nombreOpera(original);
+    const acomp = campo(b, 'ACCOMPANYING_NAMES');
+    const noches = campo(b, 'NIGHTS');
+    filas.push({
+      nombre, apellidos, original, habitacion: campo(b, 'ROOM'), reservacion: campo(b, 'CONFIRMATION_NO'), llegada: fechaOpera(campo(b, 'ARRIVAL')), salida: fechaOpera(campo(b, 'DEPARTURE')),
+      estado: campo(b, 'SHORT_RESV_STATUS').toUpperCase(), noches: noches === '' ? null : +noches,
+      acompanantes: acomp ? [acomp] : [], perfil: campo(b, 'GUEST_NAME_ID'), nacionalidad: '', pasaporte: '', vence: '',
+    });
+  }
+  const parciales = [...texto.matchAll(/<CS_RESERVATIONS_GRP2>\s*(\d+)\s*</g)].map((x) => +x[1]);
+  const g1 = texto.match(/<G_GRP1>[\s\S]*?<GRP1_DESC>([\s\S]*?)<\/GRP1_DESC>/);
+  return { filas, total: parciales.length ? parciales.reduce((a, b) => a + b, 0) : null, bloque: g1 ? xmlTexto(g1[1]) : '' };
 }
 
 // ------------------------------------------------------------------ Excel o CSV
@@ -128,6 +162,8 @@ const COLUMNAS = {
   llegada: ['llegada', 'arrival', 'arr', 'arr date', 'arrival date', 'fecha de llegada', 'check in'],
   salida: ['salida', 'departure', 'dep', 'dep date', 'departure date', 'fecha de salida', 'check out'],
   estado: ['status', 'res status', 'reservation status', 'estado', 'estatus'],
+  habitacion: ['room', 'room no', 'room number', 'habitacion', 'no habitacion', 'no de habitacion', 'numero de habitacion', 'hab'],
+  reservacion: ['conf no', 'conf', 'confirmation', 'confirmation no', 'confirmation number', 'reservacion', 'no reservacion', 'no de reservacion', 'numero de reservacion', 'reserva', 'confirmacion'],
   acompanantes: ['comparte con', 'accompanying names', 'accompanying', 'sharer', 'sharers', 'shares with', 'acompanante', 'acompanantes'],
 };
 const columnaDe = (titulo) => {
@@ -206,7 +242,7 @@ export function leerTabla(matriz) {
     const v = fechaCelda(val(r, 'vence'), orden);
     const acomp = txt(r, 'acompanantes');
     filas.push({
-      nombre, apellidos, original, nacionalidad: txt(r, 'nacionalidad'),
+      nombre, apellidos, original, nacionalidad: txt(r, 'nacionalidad'), habitacion: txt(r, 'habitacion'), reservacion: txt(r, 'reservacion'),
       pasaporte: txt(r, 'pasaporte').replace(/\s/g, '').toUpperCase(),
       vence: v.fecha, venceAmbigua: !!v.ambigua,
       llegada: fechaCelda(val(r, 'llegada'), orden).fecha, salida: fechaCelda(val(r, 'salida'), orden).fecha,
@@ -283,7 +319,7 @@ export function revisar(base, existentes = [], grupo = {}, { acompanantes = fals
         const n = nombreLibre(a);
         lista.push({
           ...n, original: a, origen: 'acompanante', de: `${f.nombre} ${f.apellidos}`.trim(), ref: i + 1,
-          nacionalidad: f.nacionalidad, pasaporte: '', vence: '', llegada: f.llegada, salida: f.salida, estado: f.estado, noches: f.noches, acompanantes: [],
+          nacionalidad: f.nacionalidad, pasaporte: '', vence: '', habitacion: f.habitacion || '', reservacion: '', llegada: f.llegada, salida: f.salida, estado: f.estado, noches: f.noches, acompanantes: [],
         });
       }
     }
@@ -298,7 +334,9 @@ export function revisar(base, existentes = [], grupo = {}, { acompanantes = fals
   });
   // Misma persona con varias reservaciones: se queda la fila con el nombre más completo
   // (y que no esté cancelada); las demás se marcan como repetidas.
-  const grupos = new Map();
+  // Se agrupan por nombre parecido y, si el archivo lo trae (XML de Opera), por el perfil del huésped.
+  const grupoDe = new Map(); // clave → arreglo compartido
+  const grupos = new Set();
   for (const f of filas) {
     if (!f.nombre || !f.apellidos) continue;
     const e = yaExacta.get(claveExacta(f)) || yaParecida.get(claveParecida(f));
@@ -306,11 +344,21 @@ export function revisar(base, existentes = [], grupo = {}, { acompanantes = fals
       f.dup = yaExacta.has(claveExacta(f)) ? 'Ya está dado de alta en el grupo' : `Parecido a ${e.nombre} ${e.apellidos}, que ya está dado de alta`;
       continue;
     }
-    const k = claveParecida(f);
-    if (!grupos.has(k)) grupos.set(k, []);
-    grupos.get(k).push(f);
+    const claves = [`n:${claveParecida(f)}`, ...(f.perfil ? [`p:${f.perfil}`] : [])];
+    let g = claves.map((k) => grupoDe.get(k)).find(Boolean);
+    if (!g) grupos.add((g = []));
+    for (const k of claves) {
+      const otro = grupoDe.get(k);
+      if (otro && otro !== g) {
+        g.push(...otro);
+        grupos.delete(otro);
+        for (const [kk, v] of grupoDe) if (v === otro) grupoDe.set(kk, g);
+      }
+      grupoDe.set(k, g);
+    }
+    g.push(f);
   }
-  for (const g of grupos.values()) {
+  for (const g of grupos) {
     if (g.length < 2) continue;
     const largo = (f) => (f.fuera ? 0 : 1000) + `${f.nombre} ${f.apellidos}`.length - f.n / 10000;
     const queda = g.reduce((a, b) => (largo(b) > largo(a) ? b : a));
@@ -330,6 +378,7 @@ export function revisarProblemas(f, grupo = {}) {
   if (f.nombre.length > 120 || f.apellidos.length > 120) f.problemas.push('El nombre es demasiado largo');
   if (!f.nac) f.problemas.push(f.nacionalidad && !paisDe(f.nacionalidad) ? `Elige la nacionalidad (el archivo dice "${f.nacionalidad}")` : 'Falta la nacionalidad');
   if (f.pasaporte && f.pasaporte.length > 30) f.problemas.push('El número de pasaporte es demasiado largo');
+  if ((f.habitacion || '').length > 10 || (f.reservacion || '').length > 20) f.problemas.push('La habitación o la reservación son demasiado largas');
   if (f.nac === 'MEX') f.avisos.push('Nacionalidad mexicana: no aplica para tax free');
   if (f.origen === 'acompanante') f.avisos.push(`Acompañante de ${f.de}. Revisa cuál es el nombre y cuáles los apellidos`);
   if (f.venceAmbigua) f.avisos.push('La fecha de vencimiento del pasaporte es ambigua; captúrala después en el expediente');
