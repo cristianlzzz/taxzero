@@ -306,11 +306,16 @@ function pantallaGrupo(datos) {
   const { grupo: g, expedientes, codigos, montos = [], facturas = [] } = datos;
   const activos = new Map(codigos.map((c) => [c.expediente_id, c]));
   const clave = g.id;
-  const f = ui.filtro[clave] || 'todos';
+  let f = ui.filtro[clave] || 'todos';
   const presentes = Object.keys(ESTADOS).filter((k) => expedientes.some((e) => e.estado === k));
   const enCola = (e) => cola().includes(e.estado);
   // Los expedientes detenidos son parte del reporte de Avance, que Front Desk no ve.
   const detenido = (e) => rol() !== 'frontdesk' && esDetenido(e);
+  const cap = QUEUE_WORD[rol()];
+  const nDet = expedientes.filter(detenido).length;
+  const filtros = [['todos', 'Todos'], ...(expedientes.some(enCola) ? [['mios', cap[0].toUpperCase() + cap.slice(1)]] : []), ...(nDet ? [['detenidos', `Detenidos (${nDet})`]] : []), ...presentes.map((k) => [k, ESTADOS[k]])];
+  // Si el estado elegido ya no tiene expedientes, el filtro vuelve a Todos.
+  if (!filtros.some(([k]) => k === f)) f = 'todos';
   // Buscador: cada palabra escrita debe aparecer en algún dato del huésped (sin importar acentos ni mayúsculas).
   const busq = ui.buscarHues[clave] || '';
   const terminos = normal(busq).split(/\s+/).filter(Boolean);
@@ -340,9 +345,6 @@ function pantallaGrupo(datos) {
         <td class="tdact">${act}<a class="btn sm" href="#/expedientes/${e.id}">Abrir</a></td></tr>`;
     })
     .join('');
-  const cap = QUEUE_WORD[rol()];
-  const nDet = expedientes.filter(detenido).length;
-  const filtros = [['todos', 'Todos'], ...(cola().length ? [['mios', cap[0].toUpperCase() + cap.slice(1)]] : []), ...(nDet ? [['detenidos', `Detenidos (${nDet})`]] : []), ...presentes.map((k) => [k, ESTADOS[k]])];
   return `${crumbs([{ t: 'Grupos', href: '#/' }, { t: g.nombre }])}
     <section class="page-head"><div><p class="eyebrow mono">${esc(g.codigo_opera || folioGrupo(g.folio))}</p><h1>${esc(g.nombre)}</h1></div>
       <div class="row">${['impuestos', 'admin'].includes(rol()) && expedientes.length ? `<a class="btn" href="#/grupos/${g.id}/imprimir">Imprimir expedientes del grupo</a><button class="btn" data-a="zipgrupo">Descargar expediente completo (.zip)</button>` : ''}
@@ -364,8 +366,8 @@ function pantallaGrupo(datos) {
       ${['credito', 'impuestos', 'admin'].includes(rol()) ? documentosCredito(datos) : ''}
       ${rol() === 'impuestos' ? verificacionGrupo(datos) : ''}
       <div class="tablero-bar hues-bar">
-        <div class="seg" role="tablist" aria-label="Filtrar por estado">${filtros.map(([k, l]) => `<button class="tab" role="tab" data-a="filtro" data-k="${k}" aria-selected="${f === k}">${l}</button>`).join('')}</div>
-        ${expedientes.length ? `<input type="search" id="h-buscar" class="buscar" data-g="${g.id}" placeholder="Buscar nombre, país, habitación, reservación o pasaporte" value="${esc(busq)}" aria-label="Buscar huésped" autocomplete="off">` : ''}
+        <label class="filtro-hues"><span>Filtrar</span><select id="h-filtro" data-g="${g.id}" aria-label="Filtrar por estado">${filtros.map(([k, l]) => `<option value="${k}" ${f === k ? 'selected' : ''}>${l}${k === 'todos' ? ` (${expedientes.length})` : k === 'mios' ? ` (${expedientes.filter(enCola).length})` : k in ESTADOS ? ` (${expedientes.filter((e) => e.estado === k).length})` : ''}</option>`).join('')}</select></label>
+        ${expedientes.length ? `<input type="search" id="h-buscar" class="buscar" data-g="${g.id}" placeholder="Buscar nombre, país, habitación, reservación" value="${esc(busq)}" aria-label="Buscar huésped" autocomplete="off">` : ''}
       </div>
       ${terminos.length ? `<p class="note">${mostrados.length} de ${expedientes.length} huéspedes coinciden con "${esc(busq.trim())}".</p>` : ''}
       <div class="tablewrap"><table><thead><tr><th>Huésped</th><th>Nacionalidad</th><th>Habitación</th><th>Pasaporte</th><th>Estado</th><th>Último cambio</th><th></th></tr></thead>
@@ -1365,6 +1367,10 @@ document.addEventListener('change', (ev) => {
     if (n) n.hidden = ev.target.value !== 'MEX';
   }
   validarMotivo();
+  if (ev.target.id === 'h-filtro') {
+    ui.filtro[ev.target.dataset.g] = ev.target.value;
+    pintar();
+  }
   if (ev.target.id === 'g-anio') {
     ui.anio = ev.target.value;
     pintar();
