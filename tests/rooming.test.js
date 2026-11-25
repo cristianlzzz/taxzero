@@ -35,14 +35,16 @@ describe('nombres de Opera', () => {
 });
 
 describe('reporte Group Rooming List', () => {
-  it('lee las reservaciones sin habitación ni número de reservación', () => {
+  it('lee las reservaciones con habitación y número de reservación', () => {
     const r = leerOpera(OPERA);
     expect(r.filas).toHaveLength(7);
     expect(r.total).toBe(7);
     expect(r.bloque).toBe('PRUEBA_001 Congreso de Prueba 2027');
     const f = r.filas[0];
     expect(f).toMatchObject({ nombre: 'Emily', apellidos: 'Carter', llegada: '2027-03-10', salida: '2027-03-14', estado: 'CKOT', acompanantes: ['Daniel Carter'] });
-    expect(JSON.stringify(r.filas)).not.toMatch(/900000|0101|PK1N/);
+    expect(f).toMatchObject({ habitacion: '0101', reservacion: '900000101' });
+    expect(r.filas[5]).toMatchObject({ habitacion: '', reservacion: '900000106' });
+    expect(JSON.stringify(r.filas)).not.toMatch(/PK1N/);
     expect(r.filas[5]).toMatchObject({ nombre: 'Ji-woo', apellidos: 'Kim', estado: 'NOSH' });
   });
 
@@ -96,7 +98,7 @@ describe('Excel y CSV', () => {
     expect(filas).toHaveLength(4);
     expect(filas[0]).toMatchObject({ nombre: 'Emily', apellidos: 'Carter', pasaporte: 'PRB100001', vence: '2030-12-31', llegada: '2027-03-10' });
     expect(filas[1].vence).toBe('2030-12-31');
-    expect(JSON.stringify(filas)).not.toMatch(/900000|0101/);
+    expect(filas[0]).toMatchObject({ habitacion: '0101', reservacion: '900000101' });
     const v = revisar(filas);
     expect(v.map((f) => f.nac)).toEqual(['USA', 'CAN', 'ITA', '']);
     expect(v[3].problemas[0]).toBe('Elige la nacionalidad (el archivo dice "Marte")');
@@ -161,7 +163,8 @@ describe('XML de Opera', () => {
     expect(r.filas[0]).toMatchObject({ nombre: 'Emily', apellidos: 'Carter', llegada: '2027-03-10', salida: '2027-03-14', acompanantes: ['Daniel Carter'], perfil: '70000001' });
     expect(r.filas[6]).toMatchObject({ nombre: 'Thomas', apellidos: 'Müller' });
     expect(r.filas[5].apellidos).toBe("O'Connor");
-    expect(JSON.stringify(r.filas)).not.toMatch(/900000|0101|PK1N|No debe leerse/);
+    expect(r.filas[0]).toMatchObject({ habitacion: '0101', reservacion: '900000101' });
+    expect(JSON.stringify(r.filas)).not.toMatch(/PK1N|No debe leerse/);
     const v = revisar(r.filas);
     expect(v.filter((f) => f.incluir)).toHaveLength(7);
     expect(v[1].dup).toMatch(/Se repite con la fila 3/);

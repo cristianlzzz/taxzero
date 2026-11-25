@@ -140,6 +140,7 @@ function celdaNac(f, i) {
 
 function filaHTML(f, i) {
   const est = f.llegada || f.salida ? `<span class="nw">${dateTxt(f.llegada)}</span><span class="sub nw">al ${dateTxt(f.salida)}</span>` : '<span class="muted">·</span>';
+  const opera = [f.habitacion ? `Hab. ${esc(f.habitacion)}` : '', f.reservacion ? `Res. ${esc(f.reservacion)}` : ''].filter(Boolean).join(' · ');
   return `<tr data-fila="${i}" class="${lista(f) ? '' : 'imp-off'}">
     <td class="imp-chk"><input type="checkbox" data-imp-inc="${i}" ${f.incluir ? 'checked' : ''} aria-label="Incluir la fila ${f.n}"></td>
     <td class="num muted">${f.n}</td>
@@ -147,7 +148,7 @@ function filaHTML(f, i) {
     <td><input type="text" class="imp-in" data-imp-campo="apellidos" data-i="${i}" value="${esc(f.apellidos)}" maxlength="120" aria-label="Apellidos de la fila ${f.n}">
       ${f.original && comparable(f.original) !== comparable(`${f.apellidos} ${f.nombre}`) ? `<span class="sub">En el archivo: ${esc(f.original)}</span>` : ''}</td>
     <td>${celdaNac(f, i)}${f.pasaporte ? `<span class="sub mono">${esc(f.pasaporte)}</span>` : ''}</td>
-    <td class="num">${est}</td>
+    <td class="num">${est}${opera ? `<span class="sub nw mono">${opera}</span>` : ''}</td>
     <td class="imp-rev">${estadoFila(f)}</td></tr>`;
 }
 
@@ -178,7 +179,7 @@ function selector(g) {
     <ul class="imp-lista note">
       <li>Antes de dar de alta verás una vista previa. Ahí eliges la nacionalidad, corriges nombres y decides qué filas entran.</li>
       <li>Las reservaciones repetidas de una misma persona y los huéspedes que ya están en el grupo se marcan y no se incluyen.</li>
-      <li>No se guardan número de habitación ni número de reservación, aunque vengan en el archivo.</li>
+      <li>Si el archivo trae habitación y número de reservación (el XML de Opera siempre los trae), se guardan con cada huésped.</li>
     </ul>
     <div><label class="btn primary" for="imp-file">Elegir archivo</label><input id="imp-file" class="file-hidden" type="file" accept=".xml,.pdf,.xlsx,.csv" data-imp-file></div>
     ${imp.error ? `<p class="err">${esc(imp.error)}</p>` : ''}
@@ -205,7 +206,7 @@ function vistaPrevia(g) {
           <span class="note">${imp.esOpera ? 'Opera los lista bajo "Accompanying Names". ' : ''}Si los activas, revisa su nombre y apellidos.</span></span></label>` : ''}
       </div></div>
     <div class="seg" role="tablist" aria-label="Filtrar filas">${FILTROS.map(([k, l]) => (conteo[k] || k === 'todas' ? `<button class="tab" role="tab" data-a="imp-filtro" data-k="${k}" aria-selected="${imp.filtro === k}">${l} (${conteo[k]})</button>` : '')).join('')}</div>
-    <div class="tablewrap"><table class="imp-tabla"><thead><tr><th><span class="sr">Incluir</span></th><th>#</th><th>Nombre(s)</th><th>Apellidos</th><th>Nacionalidad</th><th>Estancia</th><th>Revisión</th></tr></thead>
+    <div class="tablewrap"><table class="imp-tabla"><thead><tr><th><span class="sr">Incluir</span></th><th>#</th><th>Nombre(s)</th><th>Apellidos</th><th>Nacionalidad</th><th>Estancia y Opera</th><th>Revisión</th></tr></thead>
       <tbody>${filas || '<tr><td colspan="7" class="empty">Ninguna fila con este filtro.</td></tr>'}</tbody></table></div>
     ${pie(g)}`;
 }
@@ -344,7 +345,7 @@ export function manejarCambio(t, datos) {
 async function enviar(datos) {
   const filas = imp.filas.filter(lista).map((f) => ({
     fila: f.n, nombre: f.nombre, apellidos: f.apellidos, nacionalidad_codigo: f.nac, nacionalidad: nombrePais(f.nac),
-    pasaporte: f.pasaporte || '', pasaporte_vence: f.vence || '', duplicado_ok: !!f.dup,
+    pasaporte: f.pasaporte || '', pasaporte_vence: f.vence || '', habitacion: f.habitacion || '', reservacion: f.reservacion || '', duplicado_ok: !!f.dup,
   }));
   if (!filas.length) return;
   imp.enviando = true;

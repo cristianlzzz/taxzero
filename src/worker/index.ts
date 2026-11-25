@@ -408,7 +408,7 @@ app.get('/api/grupos/:id', async (c) => {
   const cancelacion = await ultimaCancelacion(db, id);
   if (c.get('perfil').rol === 'frontdesk' && cancelacion) throw new ErrorApi(403, GRUPO_CANCELADO_FD);
   const expedientes = await db.select(
-    `expedientes?grupo_id=eq.${id}&select=id,folio,nombre,apellidos,nacionalidad,nacionalidad_codigo,pasaporte,pasaporte_vence,estado,recapturar,actualizado_en&order=actualizado_en.desc`,
+    `expedientes?grupo_id=eq.${id}&select=id,folio,nombre,apellidos,nacionalidad,nacionalidad_codigo,pasaporte,pasaporte_vence,habitacion,reservacion,estado,recapturar,actualizado_en&order=actualizado_en.desc`,
   );
   let codigos: any[] = [];
   if (c.get('perfil').rol === 'frontdesk' || c.get('perfil').rol === 'admin') {
@@ -487,6 +487,8 @@ app.post('/api/grupos/:id/huespedes', async (c) => {
     p_nac_codigo: nac,
     p_nac_nombre: texto(b.nacionalidad, 80),
     p_pasaporte: texto(b.pasaporte, 30, false),
+    p_habitacion: texto(b.habitacion, 10, false),
+    p_reservacion: texto(b.reservacion, 20, false),
   });
   if (b.pasaporte_vence) await db.rpc('registrar_vencimiento', { p_expediente: id, p_fecha: fecha(b.pasaporte_vence) });
   let codigo = null;
@@ -497,7 +499,7 @@ app.post('/api/grupos/:id/huespedes', async (c) => {
 });
 
 // Alta de varios huéspedes desde la rooming list. La página ya leyó el archivo y mostró la
-// vista previa; aquí llegan solo las filas confirmadas. No se recibe habitación ni reservación.
+// vista previa; aquí llegan solo las filas confirmadas. Habitación y reservación son opcionales.
 app.post('/api/grupos/:id/importar', async (c) => {
   exigir(c, 'grupos', 'frontdesk', 'admin');
   const grupo = uuid(c.req.param('id'));
@@ -516,6 +518,8 @@ app.post('/api/grupos/:id/importar', async (c) => {
       nac_nombre: texto(f.nacionalidad, 80),
       pasaporte: texto(f.pasaporte, 30, false),
       pasaporte_vence: f.pasaporte_vence ? fecha(f.pasaporte_vence) : '',
+      habitacion: texto(f.habitacion, 10, false),
+      reservacion: texto(f.reservacion, 20, false),
       duplicado_ok: f.duplicado_ok === true,
     };
   });
@@ -609,6 +613,8 @@ app.post('/api/expedientes/:id/datos', async (c) => {
     p_nac_codigo: nac,
     p_nac_nombre: texto(b.nacionalidad, 80),
     p_pasaporte: texto(b.pasaporte, 30, false),
+    p_habitacion: texto(b.habitacion, 10, false),
+    p_reservacion: texto(b.reservacion, 20, false),
     p_motivo: texto(b.motivo, 500),
   });
   return c.json({ cambios });
@@ -631,7 +637,7 @@ app.get('/api/grupos/:id/impresion', async (c) => {
   const [grupo] = await db.select(`grupos?id=eq.${id}&select=id,folio,nombre,empresa,codigo_opera,llegada,salida`);
   if (!grupo) throw new ErrorApi(404, 'El grupo no existe.');
   const expedientes = await db.select(
-    `expedientes?grupo_id=eq.${id}&select=id,folio,nombre,apellidos,nacionalidad,pasaporte,pasaporte_vence,estado&order=apellidos.asc,nombre.asc`,
+    `expedientes?grupo_id=eq.${id}&select=id,folio,nombre,apellidos,nacionalidad,pasaporte,pasaporte_vence,habitacion,reservacion,estado&order=apellidos.asc,nombre.asc`,
   );
   let documentos: any[] = [];
   const ids = expedientes.map((e: any) => e.id);
@@ -672,7 +678,7 @@ app.get('/api/grupos/:id/paquete', async (c) => {
   const [grupo] = await db.select(`grupos?id=eq.${id}&select=id,folio,nombre,empresa,codigo_opera,llegada,salida`);
   if (!grupo) throw new ErrorApi(404, 'El grupo no existe.');
   const [expedientes, docs_grupo, docs_credito, evento, folios_maestra] = await Promise.all([
-    todas(db, `expedientes?grupo_id=eq.${id}&select=id,folio,nombre,apellidos,nacionalidad,pasaporte,pasaporte_vence,estado&order=apellidos.asc,nombre.asc,id.asc`),
+    todas(db, `expedientes?grupo_id=eq.${id}&select=id,folio,nombre,apellidos,nacionalidad,pasaporte,pasaporte_vence,habitacion,reservacion,estado&order=apellidos.asc,nombre.asc,id.asc`),
     todas(db, `documentos_grupo?grupo_id=eq.${id}&select=id,tipo,nombre_archivo,mime,bytes,subido_por_nombre,subido_en&order=subido_en.asc,id.asc`),
     todas(db, `documentos_credito?grupo_id=eq.${id}&select=id,tipo,descripcion,nombre_archivo,mime,bytes,subido_por_nombre,subido_en&order=subido_en.asc,id.asc`),
     db.select(`evento_grupo?grupo_id=eq.${id}&select=tipo,organizador,pais,id_fiscal&order=ts.desc,id.desc&limit=1`),
@@ -874,7 +880,7 @@ app.get('/api/grupos/:id/excel', async (c) => {
   const [grupo] = await db.select(`grupos?id=eq.${id}&select=*`);
   if (!grupo) throw new ErrorApi(404, 'El grupo no existe.');
   const [expedientes, facturas, montos, evento] = await Promise.all([
-    db.select(`expedientes?grupo_id=eq.${id}&select=folio,nombre,apellidos,nacionalidad,pasaporte,pasaporte_vence,estado,recapturar,actualizado_en&order=apellidos.asc,nombre.asc`),
+    db.select(`expedientes?grupo_id=eq.${id}&select=folio,nombre,apellidos,nacionalidad,pasaporte,pasaporte_vence,habitacion,reservacion,estado,recapturar,actualizado_en&order=apellidos.asc,nombre.asc`),
     db.select(`facturas_grupo?grupo_id=eq.${id}&select=folio,tipo&order=ts.asc,id.asc`),
     db.select(`montos_grupo?grupo_id=eq.${id}&select=valor&order=ts.desc,id.desc&limit=1`),
     db.select(`evento_grupo?grupo_id=eq.${id}&select=tipo,organizador,pais&order=ts.desc,id.desc&limit=1`),
@@ -893,9 +899,9 @@ app.get('/api/grupos/:id/excel', async (c) => {
     ['Monto de devolución registrado por Crédito', montos[0]?.valor || ''],
     ['Descargado', `${horaLocal(new Date().toISOString())} por ${c.get('perfil').nombre}`],
     [],
-    ['Folio', 'Apellidos', 'Nombre', 'Nacionalidad', 'Pasaporte', 'Vence pasaporte', 'Estado', 'Por recapturar', 'Último movimiento'],
+    ['Folio', 'Apellidos', 'Nombre', 'Nacionalidad', 'Pasaporte', 'Vence pasaporte', 'Habitación', 'Reservación Opera', 'Estado', 'Por recapturar', 'Último movimiento'],
     ...expedientes.map((e: any) => [
-      `EXP-${e.folio}`, e.apellidos, e.nombre, e.nacionalidad, e.pasaporte || '', e.pasaporte_vence || '',
+      `EXP-${e.folio}`, e.apellidos, e.nombre, e.nacionalidad, e.pasaporte || '', e.pasaporte_vence || '', e.habitacion || '', e.reservacion || '',
       ETIQUETA_ESTADO[e.estado] || e.estado, (e.recapturar || []).map((d: string) => ETIQUETA_DOC[d] || d).join(', '),
       horaLocal(e.actualizado_en),
     ]),

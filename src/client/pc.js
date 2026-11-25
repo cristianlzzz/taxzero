@@ -326,7 +326,7 @@ function pantallaGrupo(datos) {
         : '';
       return `<tr class="${enCola(e) ? 'q' : ''}">
         <td><b>${esc(e.nombre)} ${esc(e.apellidos)}</b><span class="sub mono">${folioExp(e.folio)}</span></td>
-        <td>${esc(e.nacionalidad)}</td><td class="mono">${esc(e.pasaporte || '·')}</td>
+        <td>${esc(e.nacionalidad)}</td><td class="mono">${esc(e.habitacion || '·')}${e.reservacion ? `<span class="sub">${esc(e.reservacion)}</span>` : ''}</td><td class="mono">${esc(e.pasaporte || '·')}</td>
         <td>${pill(e.estado)}${detenido(e) ? `<span class="sub detenido">Sin movimiento hace ${diasSin(e.actualizado_en)} días</span>` : ''}</td><td class="muted num">${fmt(e.actualizado_en)}</td>
         <td class="tdact">${act}<a class="btn sm" href="#/expedientes/${e.id}">Abrir</a></td></tr>`;
     })
@@ -355,8 +355,8 @@ function pantallaGrupo(datos) {
       ${['credito', 'impuestos', 'admin'].includes(rol()) ? documentosCredito(datos) : ''}
       ${rol() === 'impuestos' ? verificacionGrupo(datos) : ''}
       <div class="seg" role="tablist" aria-label="Filtrar por estado">${filtros.map(([k, l]) => `<button class="tab" role="tab" data-a="filtro" data-k="${k}" aria-selected="${f === k}">${l}</button>`).join('')}</div>
-      <div class="tablewrap"><table><thead><tr><th>Huésped</th><th>Nacionalidad</th><th>Pasaporte</th><th>Estado</th><th>Último cambio</th><th></th></tr></thead>
-      <tbody>${filas || `<tr><td colspan="6" class="empty">${expedientes.length ? 'Ningún expediente con este filtro.' : 'Aún no hay huéspedes en este grupo. Se dan de alta desde la rooming list o uno por uno desde Front Desk.'}</td></tr>`}</tbody></table></div>
+      <div class="tablewrap"><table><thead><tr><th>Huésped</th><th>Nacionalidad</th><th>Habitación</th><th>Pasaporte</th><th>Estado</th><th>Último cambio</th><th></th></tr></thead>
+      <tbody>${filas || `<tr><td colspan="7" class="empty">${expedientes.length ? 'Ningún expediente con este filtro.' : 'Aún no hay huéspedes en este grupo. Se dan de alta desde la rooming list o uno por uno desde Front Desk.'}</td></tr>`}</tbody></table></div>
       ${datos.bitacora?.length ? `<div class="card flat stack"><div class="row space-between"><h3>Bitácora del grupo</h3><span class="note">No se puede editar ni borrar</span></div><ol class="log">${datos.bitacora.map(lineaLog).join('')}</ol></div>` : ''}
     </div>`;
 }
@@ -592,6 +592,8 @@ function pantallaExpediente({ expediente: e, grupo: g, documentos, bitacora, cod
           <dt>Pasaporte</dt><dd class="mono">${esc(e.pasaporte || 'Por capturar')}</dd>
           <dt>Vence</dt><dd>${e.pasaporte_vence ? dateTxt(e.pasaporte_vence) : '<span class="muted">Sin registrar</span>'}</dd>
           <dt>Nacionalidad</dt><dd>${esc(e.nacionalidad)}</dd>
+          <dt>Habitación</dt><dd class="mono">${esc(e.habitacion || 'Sin capturar')}</dd>
+          <dt>Reservación Opera</dt><dd class="mono">${esc(e.reservacion || 'Sin capturar')}</dd>
           <dt>Llegada del grupo</dt><dd>${dateTxt(g.llegada)}</dd><dt>Salida del grupo</dt><dd>${dateTxt(g.salida)}</dd>
           <dt>Grupo</dt><dd class="mono">${esc(g.codigo_opera || folioGrupo(g.folio))}</dd>
         </dl>
@@ -722,6 +724,8 @@ function hojasHuesped(e, g, documentos) {
         <dt>Nacionalidad</dt><dd>${esc(e.nacionalidad)}</dd>
         <dt>Pasaporte</dt><dd class="mono">${esc(e.pasaporte || 'Sin capturar')}</dd>
         <dt>Vence</dt><dd>${e.pasaporte_vence ? dateTxt(e.pasaporte_vence) : 'Sin registrar'}</dd>
+        <dt>Habitación</dt><dd class="mono">${esc(e.habitacion || 'Sin capturar')}</dd>
+        <dt>Reservación Opera</dt><dd class="mono">${esc(e.reservacion || 'Sin capturar')}</dd>
         <dt>Grupo</dt><dd>${esc(g.nombre)} <span class="mono">(${esc(g.codigo_opera || folioGrupo(g.folio))})</span></dd>
         <dt>Estancia del grupo</dt><dd>${dateTxt(g.llegada)} al ${dateTxt(g.salida)}</dd>
         <dt>Documentos</dt><dd>${ultimos.map((d) => DOCS[d.tipo].label).join(', ') || 'Ninguno'}</dd>
@@ -903,6 +907,9 @@ function modalHTML() {
         <div class="field"><label for="h-nac">Nacionalidad</label><select id="h-nac" required>${opcionesPaises()}</select>
           <span class="note" id="h-nac-mx" hidden>Los huéspedes de nacionalidad mexicana no aplican para tax free; Grupos lo marcará como No aplica.</span></div>
         <div class="field"><label for="h-pas">No. de pasaporte <span class="muted">(opcional)</span></label><input type="text" id="h-pas" maxlength="30" autocomplete="off"></div>
+        <div class="field"><label for="h-hab">Habitación <span class="muted">(opcional)</span></label><input type="text" id="h-hab" maxlength="10" autocomplete="off"></div>
+        <div class="field"><label for="h-res">No. de reservación en Opera <span class="muted">(opcional)</span></label><input type="text" id="h-res" maxlength="20" inputmode="numeric" autocomplete="off"></div>
+        
         <div class="field"><label for="h-vence">Vencimiento del pasaporte <span class="muted">(opcional)</span></label><input type="date" id="h-vence"></div>
       </div>
       <label class="toggle"><input type="checkbox" id="h-qr" checked> Generar su código QR al guardar</label>
@@ -1035,6 +1042,9 @@ function modalHTML() {
         <div class="field"><label for="eh-nac">Nacionalidad</label><select id="eh-nac" required>${opcionesPaises().replace(`value="${e.nacionalidad_codigo}"`, `value="${e.nacionalidad_codigo}" selected`)}</select>
           <span class="note" id="eh-nac-mx" ${e.nacionalidad_codigo === 'MEX' ? '' : 'hidden'}>Los huéspedes de nacionalidad mexicana no aplican para tax free.</span></div>
         <div class="field"><label for="eh-pas">No. de pasaporte <span class="muted">(opcional)</span></label><input type="text" id="eh-pas" maxlength="30" autocomplete="off" value="${esc(e.pasaporte || '')}"></div>
+        <div class="field"><label for="eh-hab">Habitación <span class="muted">(opcional)</span></label><input type="text" id="eh-hab" maxlength="10" autocomplete="off" value="${esc(e.habitacion || '')}"></div>
+        <div class="field"><label for="eh-res">No. de reservación en Opera <span class="muted">(opcional)</span></label><input type="text" id="eh-res" maxlength="20" inputmode="numeric" autocomplete="off" value="${esc(e.reservacion || '')}"></div>
+        
         <div class="field full"><label for="eh-motivo">Motivo del cambio</label><input type="text" id="eh-motivo" required maxlength="500" placeholder="Ej. Se importó mal; el pasaporte dice Michael James"></div>
       </div>
       <p class="note">Escribe el nombre tal como aparece en el pasaporte. Cada dato que cambies queda en la bitácora del expediente con el valor anterior, el nuevo, tu nombre y el motivo.</p>
@@ -1146,7 +1156,7 @@ async function enviarHuesped(f) {
   try {
     const r = await api('POST', `/api/grupos/${g.id}/huespedes`, {
       nombre: v('h-nom'), apellidos: v('h-ape'), nacionalidad_codigo: pais[1], nacionalidad: pais[0],
-      pasaporte: v('h-pas'), pasaporte_vence: v('h-vence') || null, generar_qr: f.querySelector('#h-qr').checked,
+      pasaporte: v('h-pas'), habitacion: v('h-hab'), reservacion: v('h-res'), pasaporte_vence: v('h-vence') || null, generar_qr: f.querySelector('#h-qr').checked,
     });
     toast('Huésped dado de alta.');
     if (r.codigo) {
@@ -1550,7 +1560,7 @@ async function enviarEdicionHuesped(f) {
   btn.disabled = true;
   try {
     const { cambios } = await api('POST', `/api/expedientes/${vista.datos.expediente.id}/datos`, {
-      nombre: v('eh-nom'), apellidos: v('eh-ape'), nacionalidad_codigo: pais[1], nacionalidad: pais[0], pasaporte: v('eh-pas'), motivo: v('eh-motivo'),
+      nombre: v('eh-nom'), apellidos: v('eh-ape'), nacionalidad_codigo: pais[1], nacionalidad: pais[0], pasaporte: v('eh-pas'), habitacion: v('eh-hab'), reservacion: v('eh-res'), motivo: v('eh-motivo'),
     });
     state.modal = null;
     toast(cambios === 1 ? 'Dato corregido.' : `${cambios} datos corregidos.`);

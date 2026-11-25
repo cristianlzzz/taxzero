@@ -8,7 +8,7 @@ información, y nada se borra.
 
 - **Inicio de sesión** con un rol por área: Grupos, Front Desk, iPad de captura, Crédito, Impuestos y Administración.
 - **Grupos (PC):** alta de grupos y vista de sus expedientes.
-- **Front Desk (PC):** alta de huéspedes (sin habitación ni reservación de Opera; nacionalidad desde lista de países,
+- **Front Desk (PC):** alta de huéspedes (habitación y reservación de Opera opcionales; nacionalidad desde lista de países,
   México avisa que no aplica) y código QR de captura. El QR no lleva datos personales, sirve una vez y vence a los 15 min.
 - **Estación de captura (iPad):** escanea el QR con la cámara (o se escribe el código), toma las fotos de pasaporte,
   registration card, comprobante de pago y forma migratoria, avisa si una foto salió borrosa y envía a Grupos. Si falta
@@ -69,17 +69,17 @@ información, y nada se borra.
 
 - En la página del grupo, **Dar de alta desde rooming list** (Grupos, Front Desk y Administración). También se ofrece al
   subir la rooming list en *Documentos del evento*. El alta manual de un huésped sigue igual.
-- Acepta el reporte *Group Rooming List* de Opera en XML (el más exacto: detecta repetidos por el perfil del huésped) o PDF, y Excel (.xlsx) o CSV. El archivo se lee en el navegador; del XML se ignoran habitación, reservación, tarifas y datos de pago.
+- Acepta el reporte *Group Rooming List* de Opera en XML (el más exacto: detecta repetidos por el perfil del huésped) o PDF, y Excel (.xlsx) o CSV. El archivo se lee en el navegador; del XML se ignoran tarifas y datos de pago.
 - Vista previa antes de confirmar: nacionalidad para todas las filas que no la traen (Opera no la incluye) y cambio una
   por una, nombres editables, reservaciones repetidas de una misma persona, huéspedes que ya están en el grupo,
   reservaciones canceladas o no show, y filas con problemas (sin nombre, con números, sin nacionalidad).
 - Acompañantes ("Accompanying Names") solo si se activa la opción.
-- No se guardan número de habitación ni número de reservación. Cada alta queda en la bitácora con el nombre del archivo,
+- Se guardan habitación y número de reservación de Opera si vienen en el archivo (decisión de Cris, 2026-11-25). Cada alta queda en la bitácora con el nombre del archivo,
   y la importación en la bitácora del grupo. Si una fila falla, no entra ninguna.
 
 ## Corregir datos del huésped
 
-- En el expediente, **Corregir datos del huésped** (Front Desk, Grupos y Administración): nombre, apellidos,
+- En el expediente, **Corregir datos del huésped** (Front Desk, Grupos y Administración): nombre, apellidos, habitación, reservación,
   nacionalidad y número de pasaporte, con motivo obligatorio.
 - Mientras el expediente no haya pasado la revisión de Grupos. Después, Crédito o Impuestos lo devuelven a Grupos.
 - Cada dato que cambia queda en la bitácora del expediente con el valor anterior y el nuevo.
