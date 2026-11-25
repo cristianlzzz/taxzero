@@ -162,17 +162,9 @@ let codigo, codigo2;
   const { ctx, page } = await sesion('frontdesk');
   await page.waitForSelector('text=dar de alta');
   ok(!(await page.isVisible('text=Dar de alta un grupo')), 'Front Desk no ve el alta de grupos');
-  ok(!(await page.isVisible('a.tab:has-text("Avance")')), 'Front Desk no ve la pestaña Avance');
-  const camposFD = await page.evaluate(async () => Object.keys((await (await fetch('/api/grupos')).json()).grupos[0] || {}));
-  ok(!camposFD.includes('detenidos'), 'El servidor no entrega a Front Desk los datos del Avance');
   const salidasFD = await page.evaluate(async () => (await (await fetch('/api/grupos')).json()).grupos.map((g) => g.salida));
   ok(salidasFD.every((d) => d >= HOY), `Front Desk solo recibe grupos en casa o por llegar (${salidasFD.length})`);
   ok(!(await page.isVisible('[data-a=etapa][data-k=salieron]')), 'Front Desk no tiene la pestaña Ya salieron');
-  await page.goto(`${BASE}/#/avance`);
-  await page.waitForSelector('text=Tu área no tiene acceso');
-  ok(true, 'Front Desk no puede abrir el Avance escribiendo la dirección');
-  await page.goto(`${BASE}/#/`);
-  await page.waitForSelector('.tablero-bar');
   await page.click(`a.gcard:has-text("${nombreGrupo}")`);
   await page.click('text=Dar de alta un huésped');
   await page.fill('#h-nom', 'Emily');
@@ -553,15 +545,13 @@ const leerExcel = (f) => execFileSync('python3', ['-I', '-c',
 {
   const { ctx, page } = await sesion('impuestos');
   await page.waitForSelector('text=Expedientes por');
-  await page.click('a.tab:has-text("Avance")');
-  await page.waitForSelector('h1:has-text("Avance por")');
-  const fila = page.locator('table.avance tbody tr', { hasText: nombreGrupo });
-  ok(await fila.count() === 1, 'El avance muestra el grupo de prueba');
-  ok(/^3\b/.test(await fila.locator('td').nth(1).innerText()), 'Cuenta los huéspedes del grupo');
-  await page.screenshot({ path: `${OUT}/19-avance.png`, fullPage: true });
+  ok(!(await page.isVisible('a.tab:has-text("Avance")')), 'Ya no existe la pestaña Avance');
+  await page.goto(`${BASE}/#/avance`);
+  await page.waitForSelector('.tablero-bar');
+  ok(true, 'La dirección del Avance ahora lleva al tablero de grupos');
 
   // Excel de la lista de huéspedes.
-  await fila.locator('a').first().click();
+  await page.click(`a.gcard:has-text("${nombreGrupo}")`);
   await page.waitForSelector(`h1:has-text("${nombreGrupo}")`);
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('a:has-text("Descargar en Excel")')]);
   const fx = `${OUT}/lista.xlsx`;

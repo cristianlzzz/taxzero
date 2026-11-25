@@ -143,14 +143,13 @@ async function aceptarAviso(form) {
 // ------------------------------------------------------------------ marco
 function secciones(rol) {
   const s = [['/', 'Grupos']];
-  if (rol !== 'frontdesk') s.push(['/avance', 'Avance']);
   if (rol === 'admin' || rol === 'impuestos') s.push(['/bitacora', 'Bitácora']);
   if (rol === 'admin') s.push(['/usuarios', 'Usuarios']);
   return s;
 }
 function seccionActual() {
   const h = location.hash.replace(/^#/, '');
-  return ['/avance', '/bitacora', '/usuarios'].find((x) => h.startsWith(x)) || '/';
+  return ['/bitacora', '/usuarios'].find((x) => h.startsWith(x)) || '/';
 }
 export function header() {
   const p = state.perfil;

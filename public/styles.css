@@ -314,12 +314,7 @@ input[type=password]{font:inherit;color:var(--ink);background:var(--card);border
 tr.inactivo td{color:var(--muted)}
 a.tab{text-decoration:none}
 
-/* Etapa 5: avance, bitácora general e impresión */
-td .sub.detenido{color:var(--warn-fg);font-weight:500;margin-top:4px}
-table.avance th .sub{display:block;font-size:11px;font-weight:400;color:var(--muted)}
-table.avance td.ok{font-weight:600}
-table.avance td.alerta{color:var(--warn-fg);font-weight:600;background:var(--warn-bg)}
-table.avance tfoot td{font-weight:600;border-top:1px solid var(--line-2)}
+/* Etapa 5: bitácora general e impresión */
 .check-inline{display:inline-flex;align-items:center;gap:8px;font-size:14px;cursor:pointer}
 .filtros{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
 .filtros .full{grid-column:1/-1}
