@@ -54,9 +54,6 @@ información, y nada se borra.
 
 ## Etapa 5: reportes y bitácora general
 
-- **Avance**: tabla de todos los grupos con cuántos expedientes hay en cada paso (por capturar, Grupos, Crédito,
-  Impuestos, cerrados, no aplica) y cuántos están detenidos (3 días o más sin movimiento y sin cerrar).
-  En cada grupo se marcan los expedientes detenidos y hay un filtro para verlos. Solo cuenta expedientes; no calcula montos.
 - **Descargar en Excel** la lista de huéspedes de un grupo (Grupos, Crédito, Impuestos y Administración), con los datos
   del grupo, el organizador, los folios de factura y el monto registrado por Crédito tal como se capturó.
 - **Bitácora general** (Administración e Impuestos): todos los movimientos, con filtros por fechas, área, grupo, persona
@@ -177,7 +174,6 @@ O conecta este repositorio en Cloudflare (Workers → Create → Import a reposi
 - Si el grupo ya tiene expedientes cerrados, la empresa y las fechas de estancia quedan fijas; Impuestos debe
   reabrir esos expedientes para corregirlas.
 - No se puede dar de alta un grupo con llegada anterior a hoy (se valida en la página, en el servidor y en la base).
-- Front Desk no ve la pestaña Avance ni los datos de expedientes detenidos.
 - Filtro por año de llegada en el tablero (los grupos se conservan para siempre).
 - Front Desk solo ve grupos en casa o por llegar; el servidor le niega los grupos cuya salida ya pasó (lista, ficha, expedientes, fotos, QR y alta de huéspedes).
 - Icono con el logo de Fairmont y aviso de copyright (© Cristian Lázaro) al pie de las pantallas de PC y del inicio de sesión.

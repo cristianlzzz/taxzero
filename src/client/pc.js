@@ -25,7 +25,6 @@ function rutaActual() {
   let m;
   if (h === '/grupos/nuevo') return { s: 'alta' };
   if (h === '/usuarios') return { s: 'usuarios' };
-  if (h === '/avance') return { s: 'avance' };
   if (h === '/bitacora') return { s: 'bitacora' };
   if ((m = h.match(/^\/expedientes\/([0-9a-f-]{36})\/imprimir$/))) return { s: 'imprimir', id: m[1] };
   if ((m = h.match(/^\/grupos\/([0-9a-f-]{36})\/imprimir$/))) return { s: 'imprimirgrupo', id: m[1] };
@@ -75,11 +74,6 @@ function cargar(ruta) {
   }
   if (ruta.s === 'exp') return api('GET', `/api/expedientes/${ruta.id}`);
   if (ruta.s === 'usuarios') return api('GET', '/api/usuarios');
-  if (ruta.s === 'avance') {
-    // Front Desk no tiene acceso al reporte de Avance (el servidor tampoco le entrega esos datos).
-    if (rol() === 'frontdesk') return Promise.reject(new Error('Tu área no tiene acceso a esta sección.'));
-    return api('GET', '/api/grupos');
-  }
   if (ruta.s === 'imprimir') return api('GET', `/api/expedientes/${ruta.id}`);
   if (ruta.s === 'imprimirgrupo') {
     if (!['impuestos', 'admin'].includes(rol())) return Promise.reject(new Error('Solo Impuestos y Administración pueden imprimir los expedientes de todo el grupo.'));
@@ -98,7 +92,6 @@ function pintar() {
   else if (vista.ruta.s === 'importar') body = importar.pantallaImportar(vista.datos, crumbs);
   else if (vista.ruta.s === 'exp') body = pantallaExpediente(vista.datos);
   else if (vista.ruta.s === 'usuarios') body = pantallaUsuarios(vista.datos);
-  else if (vista.ruta.s === 'avance') body = pantallaAvance(vista.datos);
   else if (vista.ruta.s === 'bitacora') body = pantallaBitacora(vista.datos);
   else if (vista.ruta.s === 'imprimir') body = pantallaImprimir(vista.datos);
   else if (vista.ruta.s === 'imprimirgrupo') body = pantallaImprimirGrupo(vista.datos);
@@ -309,11 +302,8 @@ function pantallaGrupo(datos) {
   let f = ui.filtro[clave] || 'todos';
   const presentes = Object.keys(ESTADOS).filter((k) => expedientes.some((e) => e.estado === k));
   const enCola = (e) => cola().includes(e.estado);
-  // Los expedientes detenidos son parte del reporte de Avance, que Front Desk no ve.
-  const detenido = (e) => rol() !== 'frontdesk' && esDetenido(e);
   const cap = QUEUE_WORD[rol()];
-  const nDet = expedientes.filter(detenido).length;
-  const filtros = [['todos', 'Todos'], ...(expedientes.some(enCola) ? [['mios', cap[0].toUpperCase() + cap.slice(1)]] : []), ...(nDet ? [['detenidos', `Detenidos (${nDet})`]] : []), ...presentes.map((k) => [k, ESTADOS[k]])];
+  const filtros = [['todos', 'Todos'], ...(expedientes.some(enCola) ? [['mios', cap[0].toUpperCase() + cap.slice(1)]] : []), ...presentes.map((k) => [k, ESTADOS[k]])];
   // Si el estado elegido ya no tiene expedientes, el filtro vuelve a Todos.
   if (!filtros.some(([k]) => k === f)) f = 'todos';
   // Buscador: cada palabra escrita debe aparecer en algún dato del huésped (sin importar acentos ni mayúsculas).
@@ -325,7 +315,7 @@ function pantallaGrupo(datos) {
     return terminos.every((t) => texto.includes(t));
   };
   const mostrados = expedientes
-    .filter((e) => f === 'todos' || (f === 'mios' ? enCola(e) : f === 'detenidos' ? detenido(e) : e.estado === f))
+    .filter((e) => f === 'todos' || (f === 'mios' ? enCola(e) : e.estado === f))
     .filter(coincide)
     .sort((a, b) => enCola(b) - enCola(a) || (b.actualizado_en > a.actualizado_en ? 1 : -1));
   const cancelado = datos.cancelacion;
@@ -341,7 +331,7 @@ function pantallaGrupo(datos) {
       return `<tr class="${enCola(e) ? 'q' : ''}">
         <td><b>${esc(e.nombre)} ${esc(e.apellidos)}</b><span class="sub mono">${folioExp(e.folio)}</span></td>
         <td>${esc(e.nacionalidad)}</td><td class="mono">${esc(e.habitacion || '·')}${e.reservacion ? `<span class="sub">${esc(e.reservacion)}</span>` : ''}</td><td class="mono">${esc(e.pasaporte || '·')}</td>
-        <td>${pill(e.estado)}${detenido(e) ? `<span class="sub detenido">Sin movimiento hace ${diasSin(e.actualizado_en)} días</span>` : ''}</td><td class="muted num">${fmt(e.actualizado_en)}</td>
+        <td>${pill(e.estado)}</td><td class="muted num">${fmt(e.actualizado_en)}</td>
         <td class="tdact">${act}<a class="btn sm" href="#/expedientes/${e.id}">Abrir</a></td></tr>`;
     })
     .join('');
@@ -616,49 +606,6 @@ function pantallaExpediente({ expediente: e, grupo: g, documentos, bitacora, cod
         ${puedeVence(e) ? `<div class="row"><button class="btn sm" data-a="edithues">Corregir datos del huésped</button><button class="btn sm" data-a="vence">${e.pasaporte_vence ? 'Corregir vencimiento' : 'Registrar vencimiento del pasaporte'}</button></div>` : ''}</div>
         <div class="card stack"><div class="row space-between"><h3>Bitácora</h3><span class="note">No se puede editar ni borrar</span></div><ol class="log">${log}</ol></div>
       </aside></div>`;
-}
-
-// ------------------------------------------------------------------ avance (etapa 5)
-const DIAS_DETENIDO = 3;
-const FINALES = ['cerrado', 'no_aplica'];
-const diasSin = (ts) => Math.floor((Date.now() - new Date(ts).getTime()) / 86400000);
-const esDetenido = (e) => !FINALES.includes(e.estado) && diasSin(e.actualizado_en) >= DIAS_DETENIDO;
-
-// Columnas del avance: cada paso del flujo junta sus estados (incluye los devueltos a esa área).
-const PASOS = [
-  ['Por capturar', 'Front Desk', ['pendiente', 'incompleta']],
-  ['En Grupos', 'Revisión', ['rev_grupos', 'dev_grupos']],
-  ['En Crédito', 'Validación', ['val_credito', 'dev_credito']],
-  ['En Impuestos', 'Revisión final', ['rev_impuestos']],
-  ['Cerrados', '', ['cerrado']],
-  ['No aplica', '', ['no_aplica']],
-];
-
-function pantallaAvance({ grupos = [] }) {
-  const solo = !!ui.avSolo;
-  const lista = solo ? grupos.filter((g) => g.detenidos) : grupos;
-  const n = (g, estados) => estados.reduce((s, k) => s + ((g.conteo || {})[k] || 0), 0);
-  const total = (g) => Object.values(g.conteo || {}).reduce((s, x) => s + x, 0);
-  const celda = (v, cls = '') => `<td class="num ${cls}">${v ? v : '<span class="muted">·</span>'}</td>`;
-  const filas = lista.map((g) => `<tr>
-      <td><a href="#/grupos/${g.id}"><b>${esc(g.nombre)}</b></a><span class="sub"><span class="mono">${esc(g.codigo_opera || folioGrupo(g.folio))}</span> · ${dateTxt(g.llegada)} al ${dateTxt(g.salida)}</span></td>
-      <td class="num">${total(g)}${g.estimados ? `<span class="sub">de ${g.estimados} estimados</span>` : ''}</td>
-      ${PASOS.map(([, , est], i) => celda(n(g, est), i === PASOS.length - 2 ? 'ok' : '')).join('')}
-      ${celda(g.detenidos, g.detenidos ? 'alerta' : '')}
-      <td class="muted num">${g.ultimo_movimiento ? fmt(g.ultimo_movimiento) : 'Sin huéspedes'}</td></tr>`).join('');
-  const totales = PASOS.map(([, , est]) => lista.reduce((s, g) => s + n(g, est), 0));
-  return `<section class="page-head"><div><p class="eyebrow">Reportes</p><h1>Avance por <span class="hl">grupo</span></h1>
-      <p class="lead">Cuántos expedientes hay en cada paso del flujo y cuáles llevan ${DIAS_DETENIDO} días o más sin movimiento.</p></div></section>
-    <div class="stack">
-      <div class="row space-between"><label class="check-inline"><input type="checkbox" data-a="av-solo" ${solo ? 'checked' : ''}> Solo grupos con expedientes detenidos</label>
-        <span class="note">Detenido: no está cerrado ni marcado como No aplica, y nadie lo ha movido en ${DIAS_DETENIDO} días.</span></div>
-      <div class="tablewrap"><table class="avance"><thead><tr><th>Grupo</th><th class="num">Huéspedes</th>
-        ${PASOS.map(([t, sub]) => `<th class="num">${t}${sub ? `<span class="sub">${sub}</span>` : ''}</th>`).join('')}
-        <th class="num">Detenidos</th><th>Último movimiento</th></tr></thead>
-        <tbody>${filas || `<tr><td colspan="${PASOS.length + 4}" class="empty">${solo ? 'Ningún grupo tiene expedientes detenidos.' : 'Todavía no hay grupos.'}</td></tr>`}</tbody>
-        ${lista.length > 1 ? `<tfoot><tr><td>Todos los grupos mostrados</td><td class="num">${lista.reduce((s, g) => s + total(g), 0)}</td>${totales.map((v) => `<td class="num">${v}</td>`).join('')}<td class="num">${lista.reduce((s, g) => s + (g.detenidos || 0), 0)}</td><td></td></tr></tfoot>` : ''}
-      </table></div>
-    </div>`;
 }
 
 // ------------------------------------------------------------------ bitácora general (etapa 5)
@@ -1274,10 +1221,6 @@ document.addEventListener('click', (ev) => {
       break;
     case 'miclave':
       abrirModal({ kind: 'miclave' });
-      break;
-    case 'av-solo':
-      ui.avSolo = el.checked;
-      pintar();
       break;
     case 'bit-mas':
       masBitacora(el);

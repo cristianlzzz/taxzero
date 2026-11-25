@@ -177,12 +177,11 @@ app.post('/api/aviso', async (c) => {
 app.get('/api/grupos', async (c) => {
   exigir(c, ...PC);
   let grupos = await c.get('db').select('resumen_grupos?select=*&order=llegada.desc,creado_en.desc');
-  // Front Desk no ve el reporte de Avance: se le quitan los datos de expedientes detenidos.
   // Front Desk solo ve grupos en casa o por llegar (salida de hoy en adelante, hora de Cancún)
   // y no ve grupos cancelados.
   if (c.get('perfil').rol === 'frontdesk') {
     const hoy = hoyLocal();
-    grupos = grupos.filter((g: any) => g.salida >= hoy && !g.cancelado).map(({ detenidos: _d, ultimo_movimiento: _u, ...g }: any) => g);
+    grupos = grupos.filter((g: any) => g.salida >= hoy && !g.cancelado);
   }
   return c.json({ grupos });
 });
