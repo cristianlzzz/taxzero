@@ -12,7 +12,7 @@ import { abrirDescarga } from './paquete.js';
 let root;
 let vista = null; // { ruta, datos, error }
 let carga = 0;
-const ui = { filtro: {}, ver: {}, checks: {}, tablero: null, buscar: '', anio: '', impSolo: '' };
+const ui = { filtro: {}, ver: {}, checks: {}, tablero: null, buscar: '', anio: '', impSolo: '', buscarHues: {} };
 
 const rol = () => state.perfil.rol;
 // Dar de alta desde la rooming list: Grupos (que recibe el archivo), Front Desk y Administración.
@@ -311,8 +311,17 @@ function pantallaGrupo(datos) {
   const enCola = (e) => cola().includes(e.estado);
   // Los expedientes detenidos son parte del reporte de Avance, que Front Desk no ve.
   const detenido = (e) => rol() !== 'frontdesk' && esDetenido(e);
+  // Buscador: cada palabra escrita debe aparecer en algún dato del huésped (sin importar acentos ni mayúsculas).
+  const busq = ui.buscarHues[clave] || '';
+  const terminos = normal(busq).split(/\s+/).filter(Boolean);
+  const coincide = (e) => {
+    if (!terminos.length) return true;
+    const texto = normal([e.nombre, e.apellidos, e.nacionalidad, e.habitacion, e.reservacion, e.pasaporte, folioExp(e.folio)].filter(Boolean).join(' '));
+    return terminos.every((t) => texto.includes(t));
+  };
   const mostrados = expedientes
     .filter((e) => f === 'todos' || (f === 'mios' ? enCola(e) : f === 'detenidos' ? detenido(e) : e.estado === f))
+    .filter(coincide)
     .sort((a, b) => enCola(b) - enCola(a) || (b.actualizado_en > a.actualizado_en ? 1 : -1));
   const cancelado = datos.cancelacion;
   // En un grupo cancelado no se dan de alta huéspedes ni se generan QR.
@@ -354,9 +363,13 @@ function pantallaGrupo(datos) {
       ${extraGrupo(g, montos, facturas)}
       ${['credito', 'impuestos', 'admin'].includes(rol()) ? documentosCredito(datos) : ''}
       ${rol() === 'impuestos' ? verificacionGrupo(datos) : ''}
-      <div class="seg" role="tablist" aria-label="Filtrar por estado">${filtros.map(([k, l]) => `<button class="tab" role="tab" data-a="filtro" data-k="${k}" aria-selected="${f === k}">${l}</button>`).join('')}</div>
+      <div class="tablero-bar hues-bar">
+        <div class="seg" role="tablist" aria-label="Filtrar por estado">${filtros.map(([k, l]) => `<button class="tab" role="tab" data-a="filtro" data-k="${k}" aria-selected="${f === k}">${l}</button>`).join('')}</div>
+        ${expedientes.length ? `<input type="search" id="h-buscar" class="buscar" data-g="${g.id}" placeholder="Buscar nombre, país, habitación, reservación o pasaporte" value="${esc(busq)}" aria-label="Buscar huésped" autocomplete="off">` : ''}
+      </div>
+      ${terminos.length ? `<p class="note">${mostrados.length} de ${expedientes.length} huéspedes coinciden con "${esc(busq.trim())}".</p>` : ''}
       <div class="tablewrap"><table><thead><tr><th>Huésped</th><th>Nacionalidad</th><th>Habitación</th><th>Pasaporte</th><th>Estado</th><th>Último cambio</th><th></th></tr></thead>
-      <tbody>${filas || `<tr><td colspan="7" class="empty">${expedientes.length ? 'Ningún expediente con este filtro.' : 'Aún no hay huéspedes en este grupo. Se dan de alta desde la rooming list o uno por uno desde Front Desk.'}</td></tr>`}</tbody></table></div>
+      <tbody>${filas || `<tr><td colspan="7" class="empty">${expedientes.length ? (terminos.length ? `Ningún huésped coincide con "${esc(busq.trim())}"${f === 'todos' ? '' : ' en este filtro'}.` : 'Ningún expediente con este filtro.') : 'Aún no hay huéspedes en este grupo. Se dan de alta desde la rooming list o uno por uno desde Front Desk.'}</td></tr>`}</tbody></table></div>
       ${datos.bitacora?.length ? `<div class="card flat stack"><div class="row space-between"><h3>Bitácora del grupo</h3><span class="note">No se puede editar ni borrar</span></div><ol class="log">${datos.bitacora.map(lineaLog).join('')}</ol></div>` : ''}
     </div>`;
 }
@@ -1376,11 +1389,13 @@ document.addEventListener('keydown', (ev) => {
 
 document.addEventListener('input', (ev) => {
   validarMotivo();
-  if (ev.target.id === 'g-buscar') {
-    ui.buscar = ev.target.value;
+  if (ev.target.id === 'g-buscar' || ev.target.id === 'h-buscar') {
+    const id = ev.target.id;
+    if (id === 'g-buscar') ui.buscar = ev.target.value;
+    else ui.buscarHues[ev.target.dataset.g] = ev.target.value;
     const pos = ev.target.selectionStart;
     pintar();
-    const el = document.getElementById('g-buscar');
+    const el = document.getElementById(id);
     if (el) {
       el.focus();
       el.setSelectionRange(pos, pos);

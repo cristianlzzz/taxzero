@@ -426,3 +426,6 @@ tr.imp-off td:not(.imp-rev):not(.imp-chk){opacity:.6}
 .preview.con-aviso img{max-height:min(340px,34vh)}
 .preview.con-motivo{padding:10px}
 .preview.con-motivo img{max-height:min(200px,18vh)}
+.hues-bar{margin-bottom:0}
+.hues-bar input.buscar{width:380px}
+@media (max-width:640px){.hues-bar input.buscar{width:100%}}
